@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RuralCare Network · Integrated Healthcare Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --primary: #087f8c;
+    --navy: #16324f;
+    --bg: #f7fafa;
+    --border: #e2e8f0;
+    --text: #181c1d;
+    --muted: #64748b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 60px 24px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    font-size: 24px;
+    vertical-align: middle;
+  }
+  .material-symbols-outlined.fill {
+    font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+  .logo {
+    width: 60px;
+    height: 60px;
+    border-radius: 16px;
+    background: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 24px;
+    font-weight: 800;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 14px rgba(8, 127, 140, 0.25);
+  }
+  h1 {
+    font-size: 32px;
+    font-weight: 800;
+    color: var(--navy);
+    letter-spacing: -0.8px;
+    text-align: center;
+  }
+  p.sub {
+    color: var(--muted);
+    margin-top: 12px;
+    font-size: 15px;
+    max-width: 620px;
+    text-align: center;
+    line-height: 1.6;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    margin-top: 48px;
+    width: 100%;
+    max-width: 1060px;
+  }
+  a.tile, .tile {
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    text-decoration: none;
+    box-shadow: 0 1px 3px rgba(16,24,40,.04), 0 1px 2px rgba(16,24,40,.02);
+    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  a.tile:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px -3px rgba(22, 50, 79, 0.08);
+    border-color: var(--primary);
+  }
+  .tile-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+  }
+  .tile h2 {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--navy);
+    letter-spacing: -0.3px;
+  }
+  .tile span.desc {
+    font-size: 13px;
+    color: var(--muted);
+    display: block;
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+  .tag {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .5px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    margin-bottom: 12px;
+    width: fit-content;
+  }
+  .tag.app { background: #effdff; color: #00646f; border: 1px solid #c2f0f7; }
+  .tag.web { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+  .launch-btn {
+    margin-top: 18px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--primary);
+  }
+  footer {
+    margin-top: auto;
+    padding-top: 54px;
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <div class="logo">R+</div>
+  <h1>RuralCare Network</h1>
+  <p class="sub">Unified digital healthcare platform for rural communities. Patient & Doctor operate on Mobile, while Pharmacy & Hospital operate via dedicated Real-Time Web Command Portals.</p>
+  
+  <div class="grid">
+    <a class="tile" href="/pharmacy">
+      <div>
+        <div class="tile-icon" style="background:#effdff; color:var(--primary);">
+          <span class="material-symbols-outlined fill">local_pharmacy</span>
+        </div>
+        <span class="tag web">WEB PORTAL · PORT 4000</span>
+        <h2>Pharmacy Command Portal</h2>
+        <span class="desc">Live inbound e-prescriptions, Jan Aushadhi inventory management, token pickups & stock confirmations.</span>
+      </div>
+      <div class="launch-btn">Launch Pharmacy Console →</div>
+    </a>
+
+    <a class="tile" href="/hospital">
+      <div>
+        <div class="tile-icon" style="background:#e0f2fe; color:#0369a1;">
+          <span class="material-symbols-outlined fill">local_hospital</span>
+        </div>
+        <span class="tag web">WEB PORTAL · PORT 4000</span>
+        <h2>Hospital Referral Command</h2>
+        <span class="desc">Live ICU & general bed capacity, triage referral inbox, blood bank reserves, and 108 emergency ambulance dispatch.</span>
+      </div>
+      <div class="launch-btn">Launch Hospital Console →</div>
+    </a>
+
+    <a class="tile" href="http://localhost:8081" target="_blank" rel="noreferrer">
+      <div>
+        <div class="tile-icon" style="background:#ecfdf5; color:#059669;">
+          <span class="material-symbols-outlined fill">smartphone</span>
+        </div>
+        <span class="tag app">MOBILE APP · EXPO 8081</span>
+        <h2>Patient App</h2>
+        <span class="desc">AI-powered Voice & Chat triage, doctor discovery, ABHA health card, prescription QR dispensing & SOS.</span>
+      </div>
+      <div class="launch-btn" style="color: #059669;">Launch Patient App (Expo :8081) →</div>
+    </a>
+
+    <a class="tile" href="http://localhost:8082" target="_blank" rel="noreferrer">
+      <div>
+        <div class="tile-icon" style="background:#fef3c7; color:#b45309;">
+          <span class="material-symbols-outlined fill">stethoscope</span>
+        </div>
+        <span class="tag app" style="background:#fef3c7; color:#92400e; border-color:#fde68a;">MOBILE APP · EXPO 8082</span>
+        <h2>Doctor App / Workbench</h2>
+        <span class="desc">Live appointment queues sorted by urgency, clinical notes, digital Rx writer with formulary, and hospital referrals.</span>
+      </div>
+      <div class="launch-btn" style="color: #92400e;">Launch Doctor Workbench (Expo :8082) →</div>
+    </a>
+  </div>
+
+  <footer>RuralCare Network · Design System · Gateway running on http://localhost:4000</footer>
+</body>
+</html>

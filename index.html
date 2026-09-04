@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>RuralCare - Patient Health Network</title>
+  
+  <!-- Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  
+  <!-- Main Stylesheet -->
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+  <!-- Mobile Frame Container -->
+  <div class="app-viewport-wrapper" id="app">
+    
+    <!-- Top Status Bar (Desktop Simulator) -->
+    <div class="device-notch">
+      <span class="time" id="deviceTime">09:41</span>
+      <div class="icons">
+        <span class="material-symbols-outlined">signal_cellular_4_bar</span>
+        <span class="material-symbols-outlined">wifi</span>
+        <span class="material-symbols-outlined">battery_full</span>
+      </div>
+    </div>
+
+    <!-- Top App Bar Header -->
+    <header class="app-header">
+      <div class="profile-chip" id="headerProfileChip">
+        <div class="profile-avatar-wrapper">
+          <img 
+            src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80" 
+            alt="Rajesh Kumar" 
+            class="profile-avatar"
+          />
+          <span class="online-indicator-dot"></span>
+        </div>
+        <div class="header-title-group">
+          <h1>RuralCare Patient</h1>
+          <div class="location-tag">
+            <span class="material-symbols-outlined">location_on</span>
+            <span>Bihar, IN • Ramnagar PHC</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Emergency Quick SOS Button -->
+      <button class="emergency-quick-btn" id="headerSosBtn" title="Emergency Help">
+        <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">emergency</span>
+      </button>
+    </header>
+
+    <!-- App Content Scroll Area -->
+    <main class="app-content">
+
+      <!-- ================= SCREEN 1: HOME TAB ================= -->
+      <section class="tab-screen active" id="screen-home">
+        
+        <!-- Welcome Section -->
+        <div class="welcome-card">
+          <div class="welcome-text">
+            <h2>Namaste, Rajesh</h2>
+            <p>Your rural health hub is ready & connected</p>
+          </div>
+          <div class="status-badge">
+            <span class="dot"></span>
+            Online
+          </div>
+        </div>
+
+        <!-- Emergency Callout Card -->
+        <div class="emergency-banner">
+          <span class="material-symbols-outlined emergency-banner-bg-icon">medical_services</span>
+          <div class="emergency-banner-header">
+            <h3>Need Urgent Medical Help?</h3>
+            <p>Immediate 24/7 priority routing to ambulance & nearest PHC</p>
+          </div>
+          <button class="emergency-sos-btn" id="homeSosTriggerBtn">
+            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">call</span>
+            108 Emergency Assistance
+          </button>
+        </div>
+
+        <!-- AI Health Check Hero CTA -->
+        <div class="healthcheck-hero-card">
+          <div class="hero-header">
+            <div class="hero-icon-box">
+              <span class="material-symbols-outlined">stethoscope</span>
+            </div>
+            <div>
+              <h3>Tell us what you're feeling</h3>
+              <span style="font-size: 11px; color: var(--primary); font-weight: 600;">Powered by Clinical AI Triage</span>
+            </div>
+          </div>
+          <p>Describe symptoms in your own language or voice to get instant guidance, nearby clinic recommendations, or prescription checks.</p>
+          <button class="btn-primary-action" id="startTriageCtaBtn">
+            <span class="material-symbols-outlined">health_and_safety</span>
+            Start AI Health Check
+          </button>
+        </div>
+
+        <!-- Quick Status: Appointments & Prescriptions (Bento Style) -->
+        <div class="status-grid">
+          <!-- Upcoming Appointment -->
+          <div class="status-card" id="homeUpcomingApptCard">
+            <div class="status-icon-circle appointment">
+              <span class="material-symbols-outlined">event</span>
+            </div>
+            <div class="status-card-details">
+              <h4>Dr. Anita Sharma Clinic</h4>
+              <p>Consultation today at 2:00 PM</p>
+              <div class="status-meta text-secondary">
+                <span class="material-symbols-outlined" style="font-size: 14px;">distance</span>
+                2.5 km away • Ramnagar Center
+              </div>
+            </div>
+            <span class="material-symbols-outlined arrow-icon">chevron_right</span>
+          </div>
+
+          <!-- Prescription Ready -->
+          <div class="status-card" id="homePrescriptionCard">
+            <div class="status-icon-circle prescription">
+              <span class="material-symbols-outlined">medication</span>
+            </div>
+            <div class="status-card-details">
+              <h4>City Pharmacy Pickup</h4>
+              <p>Prescription Ready (3 items)</p>
+              <div class="status-meta text-tertiary">
+                <span class="material-symbols-outlined" style="font-size: 14px;">inventory_2</span>
+                Ready for QR scan pickup
+              </div>
+            </div>
+            <span class="material-symbols-outlined arrow-icon">chevron_right</span>
+          </div>
+        </div>
+
+        <!-- Nearby Healthcare Directory Categories -->
+        <div class="section-header">
+          <h3>Nearby Healthcare</h3>
+          <button class="btn-link" id="viewAllDoctorsBtn">View All</button>
+        </div>
+
+        <div class="category-grid">
+          <!-- Doctors -->
+          <div class="category-tile" id="catDoctorsTile">
+            <div class="category-icon">
+              <span class="material-symbols-outlined">person_search</span>
+            </div>
+            <h4>Doctors</h4>
+            <span class="count">12 available</span>
+          </div>
+
+          <!-- Pharmacies -->
+          <div class="category-tile" id="catPharmaciesTile">
+            <div class="category-icon">
+              <span class="material-symbols-outlined">local_pharmacy</span>
+            </div>
+            <h4>Pharmacies</h4>
+            <span class="count">5 nearby</span>
+          </div>
+
+          <!-- Hospitals -->
+          <div class="category-tile" id="catHospitalsTile">
+            <div class="category-icon">
+              <span class="material-symbols-outlined">local_hospital</span>
+            </div>
+            <h4>Hospitals</h4>
+            <span class="count">2 within 10km</span>
+          </div>
+        </div>
+
+        <!-- Emergency Helplines Pill Grid -->
+        <div class="helplines-card">
+          <h4>Direct Toll-Free Helplines</h4>
+          <div class="helpline-tags">
+            <div class="helpline-pill">
+              <span class="material-symbols-outlined" style="font-size: 14px;">emergency</span> 108 Ambulance
+            </div>
+            <div class="helpline-pill">
+              <span class="material-symbols-outlined" style="font-size: 14px;">support_agent</span> 104 Health Info
+            </div>
+            <div class="helpline-pill">
+              <span class="material-symbols-outlined" style="font-size: 14px;">psychology</span> 14416 Tele-MANAS
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+
+      <!-- ================= SCREEN 2: AI TRIAGE (VOICE & CHAT) ================= -->
+      <section class="tab-screen" id="screen-triage">
+        
+        <!-- Mode Switcher Toggle -->
+        <div class="triage-toggle-container">
+          <button class="triage-toggle-btn active" id="btnModeVoice">
+            <span class="material-symbols-outlined" style="font-size: 18px;">mic</span>
+            Voice Assistant
+          </button>
+          <button class="triage-toggle-btn" id="btnModeChat">
+            <span class="material-symbols-outlined" style="font-size: 18px;">chat</span>
+            Chat Assistant
+          </button>
+        </div>
+
+        <!-- VOICE TRIAGE VIEW -->
+        <div id="voiceTriageView">
+          <div class="voice-triage-panel">
+            <div style="text-align: center;">
+              <h3 style="font-size: 18px; font-weight: 700; color: var(--secondary);">AI Symptom Checker</h3>
+              <p class="voice-helper-tip" style="margin-top: 4px;">Tap microphone & speak in Hindi, Bhojpuri, or English.</p>
+            </div>
+
+            <!-- Animated Voice Zone -->
+            <div class="voice-mic-zone">
+              <div class="pulse-ring" id="pulseRing1"></div>
+              <div class="pulse-ring" id="pulseRing2"></div>
+              <div class="pulse-ring" id="pulseRing3"></div>
+              
+              <button class="voice-mic-btn" id="interactiveVoiceMicBtn">
+                <span class="material-symbols-outlined" id="micIcon" style="font-variation-settings: 'FILL' 1;">mic</span>
+              </button>
+            </div>
+
+            <div class="voice-status-text" id="voiceStatusText">
+              <span>Tap to Speak</span>
+            </div>
+
+            <!-- Extracted Symptoms Dynamic Box -->
+            <div class="extracted-symptoms-box" id="extractedSymptomsBox">
+              <h4>Extracted Clinical Findings</h4>
+              <div class="symptoms-chip-list" id="symptomsList">
+                <span class="symptom-chip">Stomach pain (Sharp)</span>
+                <span class="symptom-chip">Mild Nausea</span>
+                <span class="symptom-chip duration">
+                  <span class="material-symbols-outlined" style="font-size: 14px;">schedule</span>
+                  Started 2 days ago
+                </span>
+              </div>
+            </div>
+
+            <!-- Confirmation & Route CTA -->
+            <div class="voice-actions">
+              <button class="btn-primary-action" id="btnConfirmVoiceTriage" style="flex: 1.2;">
+                <span class="material-symbols-outlined">person_search</span>
+                Find Recommended Doctors
+              </button>
+              <button class="btn-secondary-action" id="btnResetVoiceTriage">
+                <span class="material-symbols-outlined" style="font-size: 16px;">refresh</span>
+                Retry
+              </button>
+            </div>
+
+            <!-- Clinical Disclaimer -->
+            <div class="clinical-disclaimer">
+              <span class="material-symbols-outlined" style="font-size: 18px; color: #16a34a;">info</span>
+              <span>AI Triage provides preliminary clinical guidance. It is not a substitute for formal diagnosis. In critical situations, press SOS.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- CHAT TRIAGE VIEW (Initially Hidden) -->
+        <div id="chatTriageView" style="display: none;">
+          <div class="chat-triage-panel">
+            
+            <!-- Chat message feed -->
+            <div class="chat-messages-container" id="chatMessages">
+              
+              <!-- AI Bubble 1 -->
+              <div class="chat-bubble-row ai">
+                <div class="chat-avatar">
+                  <span class="material-symbols-outlined">smart_toy</span>
+                </div>
+                <div class="chat-bubble">
+                  Namaste Rajesh! I am your RuralCare AI triage assistant. What health concern are you experiencing today?
+                </div>
+              </div>
+
+              <!-- User Bubble 1 -->
+              <div class="chat-bubble-row user">
+                <div class="chat-bubble">
+                  I have stomach pain and mild fever since yesterday.
+                </div>
+              </div>
+
+              <!-- AI Bubble 2 -->
+              <div class="chat-bubble-row ai">
+                <div class="chat-avatar">
+                  <span class="material-symbols-outlined">smart_toy</span>
+                </div>
+                <div class="chat-bubble">
+                  I note sharp abdominal discomfort with mild fever. Is the pain localized on the upper right side, or across your abdomen?
+                  
+                  <div class="chat-action-card">
+                    <span style="font-size: 11px; font-weight: 700; color: var(--secondary);">Recommended Next Step</span>
+                    <p style="font-size: 11px; color: var(--on-surface-variant);">General Medicine consultation at Ramnagar PHC (2.5 km away).</p>
+                    <button class="btn-book-slot" id="chatBookSlotBtn" style="margin-top: 4px; padding: 6px 12px;">
+                      View Available Slots for Dr. Anita Sharma
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Quick Suggested Replies -->
+            <div class="quick-replies-tray">
+              <div class="quick-reply-chip" onclick="window.sendQuickReply('Upper right side pain')">Upper right side</div>
+              <div class="quick-reply-chip" onclick="window.sendQuickReply('General stomach ache')">Across whole stomach</div>
+              <div class="quick-reply-chip" onclick="window.sendQuickReply('Also feeling dizzy')">Feeling dizzy</div>
+              <div class="quick-reply-chip" onclick="window.sendQuickReply('Took paracetamol already')">Took Paracetamol</div>
+            </div>
+
+            <!-- Chat input bar -->
+            <div class="chat-input-bar">
+              <input type="text" id="chatInputField" placeholder="Type symptoms or question..." />
+              <button class="chat-send-btn" id="chatSendBtn">
+                <span class="material-symbols-outlined" style="font-size: 18px;">send</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+
+      </section>
+
+
+      <!-- ================= SCREEN 3: DOCTORS DISCOVERY TAB ================= -->
+      <section class="tab-screen" id="screen-doctors">
+        
+        <!-- Search and Filter Bar -->
+        <div class="search-filter-box">
+          <div class="search-input-wrapper">
+            <span class="material-symbols-outlined">search</span>
+            <input type="text" id="doctorSearchInput" placeholder="Search doctor, clinic or specialty..." />
+          </div>
+
+          <!-- Filter Pills -->
+          <div class="specialty-filter-pills" id="specialtyFilterGroup">
+            <div class="specialty-pill active" data-specialty="all">All Specialists</div>
+            <div class="specialty-pill" data-specialty="General Medicine">General Medicine</div>
+            <div class="specialty-pill" data-specialty="Pediatrics">Pediatrics</div>
+            <div class="specialty-pill" data-specialty="Cardiology">Cardiology</div>
+            <div class="specialty-pill" data-specialty="Orthopedics">Orthopedics</div>
+            <div class="specialty-pill" data-specialty="Gynecology">Gynecology</div>
+          </div>
+        </div>
+
+        <!-- Doctors Directory List -->
+        <div class="doctors-list" id="doctorsListContainer">
+          
+          <!-- Doctor Card 1 -->
+          <div class="doctor-card" data-specialty="General Medicine">
+            <div class="doctor-card-top">
+              <img src="https://images.unsplash.com/photo-1594824813689-53e34273e911?w=150&auto=format&fit=crop&q=80" alt="Dr. Anita Sharma" class="doctor-avatar" />
+              <div class="doctor-info">
+                <div class="doctor-name-row">
+                  <h4>Dr. Anita Sharma</h4>
+                  <div class="rating-badge">
+                    <span class="material-symbols-outlined" style="font-size: 13px; font-variation-settings: 'FILL' 1;">star</span>
+                    4.9
+                  </div>
+                </div>
+                <div class="doctor-specialty">MBBS, MD - General Physician</div>
+                <div class="doctor-experience">12 yrs exp • English, Hindi, Bhojpuri</div>
+                <div class="doctor-location-row">
+                  <span class="material-symbols-outlined">location_on</span>
+                  <span>Ramnagar Community Health Center (2.5 km)</span>
+                </div>
+              </div>
+            </div>
+            <div class="doctor-card-footer">
+              <div class="doctor-fee">
+                <span class="fee-label">Consultation</span>
+                <span class="fee-amount">₹200 <span class="ayushman-tag">Free with Ayushman</span></span>
+              </div>
+              <button class="btn-book-slot" onclick="window.openBookingModal('Dr. Anita Sharma', 'General Physician', 'Ramnagar PHC')">
+                Book Slot
+              </button>
+            </div>
+          </div>
+
+          <!-- Doctor Card 2 -->
+          <div class="doctor-card" data-specialty="Pediatrics">
+            <div class="doctor-card-top">
+              <img src="https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150&auto=format&fit=crop&q=80" alt="Dr. Rajesh Verma" class="doctor-avatar" />
+              <div class="doctor-info">
+                <div class="doctor-name-row">
+                  <h4>Dr. Rajesh Verma</h4>
+                  <div class="rating-badge">
+                    <span class="material-symbols-outlined" style="font-size: 13px; font-variation-settings: 'FILL' 1;">star</span>
+                    4.8
+                  </div>
+                </div>
+                <div class="doctor-specialty">MBBS, DCH - Pediatric Specialist</div>
+                <div class="doctor-experience">8 yrs exp • Hindi, Bhojpuri</div>
+                <div class="doctor-location-row">
+                  <span class="material-symbols-outlined">location_on</span>
+                  <span>Rural Child Health Clinic (4.1 km)</span>
+                </div>
+              </div>
+            </div>
+            <div class="doctor-card-footer">
+              <div class="doctor-fee">
+                <span class="fee-label">Consultation</span>
+                <span class="fee-amount">₹250 <span class="ayushman-tag">Free with Ayushman</span></span>
+              </div>
+              <button class="btn-book-slot" onclick="window.openBookingModal('Dr. Rajesh Verma', 'Pediatrician', 'Rural Child Clinic')">
+                Book Slot
+              </button>
+            </div>
+          </div>
+
+          <!-- Doctor Card 3 -->
+          <div class="doctor-card" data-specialty="Cardiology">
+            <div class="doctor-card-top">
+              <img src="https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=150&auto=format&fit=crop&q=80" alt="Dr. Priya Patel" class="doctor-avatar" />
+              <div class="doctor-info">
+                <div class="doctor-name-row">
+                  <h4>Dr. Priya Patel</h4>
+                  <div class="rating-badge">
+                    <span class="material-symbols-outlined" style="font-size: 13px; font-variation-settings: 'FILL' 1;">star</span>
+                    4.9
+                  </div>
+                </div>
+                <div class="doctor-specialty">MD, DM - Cardiologist</div>
+                <div class="doctor-experience">15 yrs exp • Tele-consultation Hub</div>
+                <div class="doctor-location-row">
+                  <span class="material-symbols-outlined">videocam</span>
+                  <span>District Telemedicine Center (7.8 km)</span>
+                </div>
+              </div>
+            </div>
+            <div class="doctor-card-footer">
+              <div class="doctor-fee">
+                <span class="fee-label">Video Consult</span>
+                <span class="fee-amount">₹350 <span class="ayushman-tag">Ayushman Covered</span></span>
+              </div>
+              <button class="btn-book-slot" onclick="window.openBookingModal('Dr. Priya Patel', 'Cardiologist', 'District Telemedicine')">
+                Book Slot
+              </button>
+            </div>
+          </div>
+
+          <!-- Doctor Card 4 -->
+          <div class="doctor-card" data-specialty="Orthopedics">
+            <div class="doctor-card-top">
+              <img src="https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=150&auto=format&fit=crop&q=80" alt="Dr. Manoj Kumar" class="doctor-avatar" />
+              <div class="doctor-info">
+                <div class="doctor-name-row">
+                  <h4>Dr. Manoj Kumar</h4>
+                  <div class="rating-badge">
+                    <span class="material-symbols-outlined" style="font-size: 13px; font-variation-settings: 'FILL' 1;">star</span>
+                    4.7
+                  </div>
+                </div>
+                <div class="doctor-specialty">MS (Ortho) - Bone & Joint Specialist</div>
+                <div class="doctor-experience">10 yrs exp • Joint Pain & Trauma</div>
+                <div class="doctor-location-row">
+                  <span class="material-symbols-outlined">location_on</span>
+                  <span>Kisan Seva Polyclinic (5.3 km)</span>
+                </div>
+              </div>
+            </div>
+            <div class="doctor-card-footer">
+              <div class="doctor-fee">
+                <span class="fee-label">Consultation</span>
+                <span class="fee-amount">₹300 <span class="ayushman-tag">Ayushman Covered</span></span>
+              </div>
+              <button class="btn-book-slot" onclick="window.openBookingModal('Dr. Manoj Kumar', 'Orthopedic Surgeon', 'Kisan Seva Polyclinic')">
+                Book Slot
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+
+      <!-- ================= SCREEN 4: MEDS & PRESCRIPTIONS TAB ================= -->
+      <section class="tab-screen" id="screen-meds">
+        
+        <div class="welcome-text">
+          <h2 style="font-size: 20px;">My Prescriptions & Pharmacy</h2>
+          <p>Verify stock, view QR prescription, or request refills</p>
+        </div>
+
+        <div class="meds-container">
+          
+          <!-- Prescription Item 1 -->
+          <div class="prescription-card">
+            <div class="prescription-header">
+              <div class="med-name-group">
+                <h4>Amoxicillin 500mg</h4>
+                <span class="med-dosage">Antibiotic Capsule • 15 Capsules</span>
+              </div>
+              <span class="rx-status-tag ready">Ready for Pickup</span>
+            </div>
+
+            <div class="med-schedule-info">
+              <span class="material-symbols-outlined" style="font-size: 16px; color: var(--primary);">timer</span>
+              <span>1 capsule 3 times daily after meals • 5 days left</span>
+            </div>
+
+            <div class="prescription-footer">
+              <div class="pharmacy-location-info">
+                <strong>City Pharmacy</strong> (1.2 km away)
+              </div>
+              <div class="med-action-btns">
+                <button class="btn-qr-view" onclick="window.showQrModal('Amoxicillin 500mg', 'RX-882190')">
+                  <span class="material-symbols-outlined" style="font-size: 14px;">qr_code_2</span> QR Code
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Prescription Item 2 -->
+          <div class="prescription-card">
+            <div class="prescription-header">
+              <div class="med-name-group">
+                <h4>Pantoprazole 40mg</h4>
+                <span class="med-dosage">Antacid Tablet • 10 Tablets</span>
+              </div>
+              <span class="rx-status-tag active">Active Course</span>
+            </div>
+
+            <div class="med-schedule-info">
+              <span class="material-symbols-outlined" style="font-size: 16px; color: var(--primary);">wb_sunny</span>
+              <span>1 tablet daily before breakfast • 10 days supply</span>
+            </div>
+
+            <div class="prescription-footer">
+              <div class="pharmacy-location-info">
+                <strong>Gramin Seva Medicals</strong> (3.0 km)
+              </div>
+              <div class="med-action-btns">
+                <button class="btn-qr-view" onclick="window.showQrModal('Pantoprazole 40mg', 'RX-882191')">
+                  <span class="material-symbols-outlined" style="font-size: 14px;">qr_code_2</span> QR
+                </button>
+                <button class="btn-refill" onclick="window.requestRefill('Pantoprazole 40mg')">
+                  Refill
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Prescription Item 3 -->
+          <div class="prescription-card">
+            <div class="prescription-header">
+              <div class="med-name-group">
+                <h4>Paracetamol 650mg (Dolo)</h4>
+                <span class="med-dosage">Fever & Pain Relief • 10 Tablets</span>
+              </div>
+              <span class="rx-status-tag active">SOS Usage</span>
+            </div>
+
+            <div class="med-schedule-info">
+              <span class="material-symbols-outlined" style="font-size: 16px; color: var(--primary);">medication_liquid</span>
+              <span>As needed for high fever (Min 6 hours interval)</span>
+            </div>
+
+            <div class="prescription-footer">
+              <div class="pharmacy-location-info">
+                <strong>Kisan Seva Kendra PHC</strong> (In Stock)
+              </div>
+              <div class="med-action-btns">
+                <button class="btn-qr-view" onclick="window.showQrModal('Paracetamol 650mg', 'RX-882192')">
+                  <span class="material-symbols-outlined" style="font-size: 14px;">qr_code_2</span> QR
+                </button>
+                <button class="btn-refill" onclick="window.requestRefill('Paracetamol 650mg')">
+                  Refill
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Pharmacy Map / Status Card -->
+        <div class="helplines-card" style="background-color: var(--surface-container-lowest); border: 1px solid var(--outline-light);">
+          <h4 style="color: var(--secondary);">Government Generic Drug Scheme</h4>
+          <p style="font-size: 12px; color: var(--on-surface-variant);">All prescribed medicines available at 50-80% subsidized prices at Jan Aushadhi Kendra, Ramnagar.</p>
+        </div>
+
+      </section>
+
+
+      <!-- ================= SCREEN 5: PROFILE & SETTINGS TAB ================= -->
+      <section class="tab-screen" id="screen-profile">
+        
+        <!-- Profile Banner -->
+        <div class="profile-card-banner">
+          <div class="profile-main-info">
+            <img 
+              src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80" 
+              alt="Rajesh Kumar" 
+              class="profile-large-avatar" 
+            />
+            <div>
+              <h3>Rajesh Kumar</h3>
+              <p>54 Yrs • Male • Blood Group B+</p>
+            </div>
+          </div>
+
+          <div class="abha-id-badge">
+            <div>
+              <span style="font-size: 10px; opacity: 0.8; text-transform: uppercase;">Ayushman Bharat ABHA ID</span>
+              <div style="font-family: monospace; font-weight: 700; font-size: 13px;">91-4829-1029-4821</div>
+            </div>
+            <span class="material-symbols-outlined" style="font-size: 20px;">verified</span>
+          </div>
+        </div>
+
+        <!-- Medical Details List -->
+        <div class="profile-details-list">
+          <div class="profile-detail-row">
+            <span class="label">
+              <span class="material-symbols-outlined" style="font-size: 16px;">home_health</span> Primary Health Center
+            </span>
+            <span class="value">Ramnagar PHC</span>
+          </div>
+          <div class="profile-detail-row">
+            <span class="label">
+              <span class="material-symbols-outlined" style="font-size: 16px;">health_and_safety</span> Ayushman PM-JAY
+            </span>
+            <span class="value" style="color: var(--tertiary);">Active (₹5 Lakh Cover)</span>
+          </div>
+          <div class="profile-detail-row">
+            <span class="label">
+              <span class="material-symbols-outlined" style="font-size: 16px;">contacts</span> Emergency Contact
+            </span>
+            <span class="value">Amit (Son) • 9876543210</span>
+          </div>
+          <div class="profile-detail-row">
+            <span class="label">
+              <span class="material-symbols-outlined" style="font-size: 16px;">support</span> Village ASHA Worker
+            </span>
+            <span class="value">Sunita Devi • 9123456780</span>
+          </div>
+        </div>
+
+        <!-- App Language & Accessibility -->
+        <div class="section-header">
+          <h3>App Settings & Accessibility</h3>
+        </div>
+
+        <div class="profile-details-list">
+          <div class="profile-detail-row">
+            <span class="label">
+              <span class="material-symbols-outlined" style="font-size: 16px;">translate</span> Language / भाषा
+            </span>
+            <select id="languageSelect" style="border: 1px solid var(--outline-variant); border-radius: 6px; padding: 4px 8px; font-size: 12px; font-weight: 600; outline: none;">
+              <option value="en">English</option>
+              <option value="hi" selected>हिन्दी (Hindi)</option>
+              <option value="bho">भोजपुरी (Bhojpuri)</option>
+              <option value="bn">বাংলা (Bengali)</option>
+            </select>
+          </div>
+          <div class="profile-detail-row">
+            <span class="label">
+              <span class="material-symbols-outlined" style="font-size: 16px;">cloud_sync</span> Offline Sync
+            </span>
+            <span class="value" style="color: var(--tertiary);">Enabled (Cache Ready)</span>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="bottom-nav">
+      <!-- Home Tab -->
+      <button class="nav-item active" data-target="screen-home" id="navHome">
+        <div class="nav-icon-wrap">
+          <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">home</span>
+        </div>
+        <span>Home</span>
+      </button>
+
+      <!-- Triage Tab -->
+      <button class="nav-item" data-target="screen-triage" id="navTriage">
+        <div class="nav-icon-wrap">
+          <span class="material-symbols-outlined">medical_services</span>
+        </div>
+        <span>Triage</span>
+      </button>
+
+      <!-- Doctors Tab -->
+      <button class="nav-item" data-target="screen-doctors" id="navDoctors">
+        <div class="nav-icon-wrap">
+          <span class="material-symbols-outlined">person_search</span>
+        </div>
+        <span>Doctors</span>
+      </button>
+
+      <!-- Meds Tab -->
+      <button class="nav-item" data-target="screen-meds" id="navMeds">
+        <div class="nav-icon-wrap">
+          <span class="material-symbols-outlined">prescriptions</span>
+        </div>
+        <span>Meds</span>
+      </button>
+
+      <!-- Profile Tab -->
+      <button class="nav-item" data-target="screen-profile" id="navProfile">
+        <div class="nav-icon-wrap">
+          <span class="material-symbols-outlined">person</span>
+        </div>
+        <span>Profile</span>
+      </button>
+    </nav>
+
+    <!-- ================= MODALS & DRAWERS ================= -->
+    
+    <!-- 1. Appointment Booking Drawer Modal -->
+    <div class="modal-overlay" id="bookingModalOverlay">
+      <div class="modal-sheet">
+        <div class="modal-sheet-header">
+          <div>
+            <h3 id="modalDoctorName">Book Appointment</h3>
+            <p id="modalDoctorClinic" style="font-size: 12px; color: var(--on-surface-variant);"></p>
+          </div>
+          <button class="modal-close-btn" id="closeBookingModalBtn">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        <!-- Consultation Type Selector -->
+        <div class="slot-group">
+          <label>Consultation Mode</label>
+          <div style="display: flex; gap: 8px;">
+            <button class="triage-toggle-btn active" style="border: 1px solid var(--primary);">
+              <span class="material-symbols-outlined" style="font-size: 16px;">local_hospital</span>
+              In-Person Clinic Visit
+            </button>
+            <button class="triage-toggle-btn" style="border: 1px solid var(--outline-light);">
+              <span class="material-symbols-outlined" style="font-size: 16px;">videocam</span>
+              Video Call
+            </button>
+          </div>
+        </div>
+
+        <!-- Select Date -->
+        <div class="slot-group">
+          <label>Select Date</label>
+          <div class="time-slot-grid" id="dateSlotGrid">
+            <div class="time-slot-pill active">Today (Aug 25)</div>
+            <div class="time-slot-pill">Tomorrow (Aug 26)</div>
+            <div class="time-slot-pill">Wed (Aug 27)</div>
+          </div>
+        </div>
+
+        <!-- Select Time Slot -->
+        <div class="slot-group">
+          <label>Available Time Slots</label>
+          <div class="time-slot-grid" id="timeSlotGrid">
+            <div class="time-slot-pill active">10:00 AM</div>
+            <div class="time-slot-pill">11:30 AM</div>
+            <div class="time-slot-pill">02:00 PM</div>
+            <div class="time-slot-pill">03:30 PM</div>
+            <div class="time-slot-pill">05:00 PM</div>
+            <div class="time-slot-pill">06:15 PM</div>
+          </div>
+        </div>
+
+        <!-- Patient Note / Reason -->
+        <div class="slot-group">
+          <label>Reason for Visit (Optional)</label>
+          <input type="text" placeholder="e.g. Abdominal pain, follow-up" style="border: 1px solid var(--outline-light); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; outline: none;" value="Stomach pain & mild fever" />
+        </div>
+
+        <!-- Confirm CTA -->
+        <button class="btn-primary-action" id="confirmBookingBtn" style="margin-top: 6px;">
+          <span class="material-symbols-outlined">check_circle</span>
+          Confirm Appointment (₹0 with Ayushman)
+        </button>
+      </div>
+    </div>
+
+    <!-- 2. Prescription QR Code Modal -->
+    <div class="modal-overlay" id="qrModalOverlay">
+      <div class="modal-sheet" style="text-align: center; align-items: center;">
+        <div class="modal-sheet-header" style="width: 100%;">
+          <h3 id="qrModalTitle">Prescription QR</h3>
+          <button class="modal-close-btn" id="closeQrModalBtn">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        <p style="font-size: 12px; color: var(--on-surface-variant);">Show this QR code to the pharmacist at Jan Aushadhi or City Pharmacy for instant digital dispensing.</p>
+
+        <!-- Simulated QR Box -->
+        <div style="background: #ffffff; padding: 16px; border: 2px dashed var(--primary); border-radius: 16px; margin: 10px auto; display: inline-block;">
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=RURALCARE-PATIENT-RAJESH-RX882190" alt="QR Code" style="width: 180px; height: 180px; display: block;" />
+        </div>
+
+        <div style="font-size: 13px; font-weight: 700; color: var(--primary);" id="qrModalRxCode">RX-882190</div>
+        <div style="font-size: 11px; color: var(--on-surface-variant);">Authorized by Dr. Anita Sharma (MBBS, MD)</div>
+      </div>
+    </div>
+
+    <!-- 3. Emergency SOS Trigger Modal with Countdown -->
+    <div class="modal-overlay" id="sosModalOverlay">
+      <div class="sos-modal-content">
+        <div class="sos-radar-circle" id="sosCountdownNumber">
+          5
+        </div>
+
+        <h3 style="font-size: 18px; font-weight: 800; color: var(--error-dark);">CONNECTING SOS EMERGENCY</h3>
+        <p style="font-size: 13px; color: var(--on-surface-variant); line-height: 1.4;">
+          Dialing <strong>108 National Ambulance</strong> and broadcasting GPS location to Ramnagar PHC & Family Contacts.
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
+          <button class="emergency-sos-btn" id="sosCallNowBtn">
+            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">phone_in_talk</span>
+            Call 108 Now
+          </button>
+          <button class="btn-secondary-action" id="cancelSosBtn" style="border-color: var(--outline-variant); color: var(--on-surface-variant);">
+            Cancel SOS
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification Banner -->
+    <div class="toast-container" id="appToast">
+      <span class="material-symbols-outlined" id="toastIcon" style="color: #22c55e;">check_circle</span>
+      <span id="toastMsg">Action completed successfully</span>
+    </div>
+
+  </div>
+
+  <!-- JavaScript Logic -->
+  <script src="js/app.js"></script>
+</body>
+</html>

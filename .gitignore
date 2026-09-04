@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+*/node_modules/
+package-lock.json.bak
+
+# Expo & Metro
+.expo/
+*/.expo/
+dist/
+*/dist/
+web-build/
+.metro-health-check*
+
+# Large AI Model Weights (>100MB GitHub limit)
+*.gguf
+*.bin
+*.onnx
+
+# Environment Variables & Secrets (CRITICAL)
+.env
+.env.*
+!.env.example
+*.env
+*/.env
+*/.env.*
+!*/.env.example
+mcp_config.json
+mcp_config.*.json
+
+# Native Android
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.claude/
+.agents/
+
+# Temporary / Scratch
+tmp/
+scratch/

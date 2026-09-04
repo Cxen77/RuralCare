@@ -1,0 +1,884 @@
+:root {
+  /* Stitch Design System: RuralCare Hospital Portal (White & Shades of Green) */
+  --primary: #00685f;
+  --primary-container: #008378;
+  --primary-hover: #005049;
+  --primary-light: #e6f7f5;
+  --primary-fixed-dim: #6bd8cb;
+  --on-primary: #ffffff;
+  --on-primary-container: #f4fffc;
+
+  --success-soft: #dcfce7;
+  --success-text: #166534;
+  --success-border: #bbf7d0;
+
+  --background: #f8f9fa;
+  --surface-white: #ffffff;
+  --surface-dim: #f3f4f5;
+  --surface-container: #edeeef;
+  --surface-container-high: #e7e8e9;
+  --surface-container-highest: #e1e3e4;
+
+  --on-background: #191c1d;
+  --on-surface: #191c1d;
+  --on-surface-variant: #3d4947;
+  --text-muted: #64748b;
+
+  --outline: #6d7a77;
+  --outline-variant: #e2e8f0;
+  --outline-light: #f1f5f9;
+
+  --emergency-red: #ef4444;
+  --emergency-soft: #fee2e2;
+  --warning-amber: #f59e0b;
+  --warning-soft: #fef3c7;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-card: 0 1px 3px rgba(16, 24, 40, 0.05), 0 1px 2px rgba(16, 24, 40, 0.03);
+  --shadow-card-hover: 0px 10px 15px -3px rgba(0, 104, 95, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+  --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+
+  --sidebar-width: 260px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--background);
+  color: var(--on-surface);
+  line-height: 1.5;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  width: 100vw;
+  overflow-x: hidden;
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  font-size: 20px;
+  vertical-align: middle;
+  display: inline-block;
+  user-select: none;
+}
+
+.material-symbols-outlined.fill {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* ── App Shell ── */
+.hospital-shell {
+  display: flex;
+  width: 100vw;
+  min-height: 100vh;
+}
+
+/* ── Side Navigation Bar (Stitch Spec: 260px) ── */
+.sidebar {
+  width: var(--sidebar-width);
+  height: 100vh;
+  position: fixed;
+  left: 0;
+  top: 0;
+  background: var(--surface-white);
+  border-right: 1px solid var(--outline-variant);
+  display: flex;
+  flex-direction: column;
+  padding: 24px 0 16px;
+  z-index: 40;
+}
+
+.sidebar-brand-box {
+  padding: 0 20px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.brand-icon-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: var(--primary);
+  color: var(--on-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 18px;
+  box-shadow: 0 2px 8px rgba(0, 104, 95, 0.25);
+}
+
+.brand-name {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--primary);
+  letter-spacing: -0.3px;
+  line-height: 1.2;
+}
+
+.brand-subtext {
+  font-size: 11.5px;
+  color: var(--on-surface-variant);
+}
+
+.sidebar-nav-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  color: var(--on-surface-variant);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+}
+
+.sidebar-nav-btn:hover {
+  background: var(--surface-dim);
+  color: var(--primary);
+}
+
+.sidebar-nav-btn.active {
+  background: var(--primary-light);
+  color: var(--primary);
+  font-weight: 700;
+  border-right: 4px solid var(--primary);
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+.sidebar-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  background: var(--surface-container-high);
+  color: var(--on-surface-variant);
+}
+
+.sidebar-nav-btn.active .sidebar-badge {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.sidebar-badge.alert {
+  background: var(--emergency-soft);
+  color: var(--emergency-red);
+}
+
+.sidebar-footer-box {
+  padding: 12px 16px 0;
+  border-top: 1px solid var(--outline-variant);
+}
+
+.online-status-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--success-soft);
+  color: var(--success-text);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pulse-green {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success-text);
+}
+
+/* ── Main Container (Fluid Offset by 260px) ── */
+.main-content-wrap {
+  flex: 1;
+  margin-left: var(--sidebar-width);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+}
+
+/* ── Top Header Navigation ── */
+.top-header-bar {
+  height: 64px;
+  background: var(--surface-white);
+  border-bottom: 1px solid var(--outline-variant);
+  padding: 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.header-hospital-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-hospital-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--primary-light);
+  color: var(--primary);
+  border: 1px solid rgba(0, 104, 95, 0.2);
+}
+
+.top-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.emergency-command-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  background: var(--success-soft);
+  color: var(--success-text);
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid var(--success-border);
+}
+
+.admin-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  border: 1px solid var(--outline-variant);
+}
+
+/* ── Canvas Content Body ── */
+.canvas-body {
+  flex: 1;
+  padding: 28px 32px 64px;
+  max-width: 1320px;
+  width: 100%;
+}
+
+/* ── Page Header ── */
+.page-heading-block {
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.page-title {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--on-background);
+  letter-spacing: -0.4px;
+}
+
+.page-subtitle {
+  font-size: 13.5px;
+  color: var(--on-surface-variant);
+  margin-top: 2px;
+}
+
+/* ── Bento KPI Summary Grid (Stitch Spec) ── */
+.kpi-bento-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 1024px) {
+  .kpi-bento-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.kpi-card {
+  background: var(--surface-white);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-xl);
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+  border-color: var(--primary);
+}
+
+.kpi-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.kpi-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.kpi-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: var(--primary-light);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kpi-icon-wrap.alert {
+  background: var(--emergency-soft);
+  color: var(--emergency-red);
+}
+
+.kpi-value {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--on-surface);
+  margin: 10px 0 2px;
+  letter-spacing: -0.5px;
+}
+
+.kpi-footer-sub {
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Panel Cards (White & Clean Green accents) ── */
+.panel-white-card {
+  background: var(--surface-white);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-xl);
+  padding: 24px;
+  box-shadow: var(--shadow-card);
+  margin-bottom: 24px;
+}
+
+.panel-title-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.panel-heading {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+/* ── Bed Capacity Meters (Stitch Green Progress Bars) ── */
+.bed-meter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 900px) {
+  .bed-meter-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.bed-box {
+  background: var(--background);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.bed-box-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.bed-box-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.bed-box-val {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--primary);
+  letter-spacing: -0.5px;
+}
+
+.progress-track {
+  width: 100%;
+  height: 10px;
+  background: var(--surface-container-high);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin: 12px 0 14px;
+}
+
+.progress-fill-green {
+  height: 100%;
+  background: var(--primary);
+  border-radius: var(--radius-full);
+  transition: width 0.3s ease;
+}
+
+.progress-fill-green.alert {
+  background: var(--emergency-red);
+}
+
+.stepper-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── Blood Bank Matrix ── */
+.blood-reserve-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 10px;
+}
+
+.blood-card-cell {
+  background: var(--background);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-md);
+  padding: 12px 6px;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.blood-card-cell:hover {
+  background: var(--surface-white);
+  border-color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.blood-card-cell.shortage {
+  border-color: var(--emergency-soft);
+  background: #fff8f8;
+}
+
+.blood-group-label {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--primary);
+}
+
+.blood-units-number {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--on-surface);
+  margin: 2px 0;
+}
+
+.blood-card-cell.shortage .blood-units-number {
+  color: var(--emergency-red);
+}
+
+/* ── Buttons (Clean Forest Teal & White) ── */
+.btn {
+  height: 38px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.btn-outline {
+  background: var(--surface-white);
+  border-color: var(--outline-variant);
+  color: var(--on-surface);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: var(--surface-dim);
+  border-color: var(--outline);
+}
+
+.btn-danger {
+  background: var(--emergency-soft);
+  color: var(--emergency-red);
+  border-color: #fecaca;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--emergency-red);
+  color: #fff;
+}
+
+.btn-sm {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Status Pills & Chips ── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.chip-green {
+  background: var(--success-soft);
+  color: var(--success-text);
+  border: 1px solid var(--success-border);
+}
+
+.chip-teal {
+  background: var(--primary-light);
+  color: var(--primary);
+  border: 1px solid rgba(0, 104, 95, 0.2);
+}
+
+.chip-amber {
+  background: var(--warning-soft);
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.chip-red {
+  background: var(--emergency-soft);
+  color: var(--emergency-red);
+  border: 1px solid #fecaca;
+}
+
+/* ── Data Tables (Stitch Spec: High-legibility) ── */
+.stitch-table-card {
+  background: var(--surface-white);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+  margin-bottom: 24px;
+}
+
+.stitch-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.stitch-table th {
+  background: var(--background);
+  padding: 13px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.stitch-table td {
+  padding: 15px 18px;
+  font-size: 13.5px;
+  border-bottom: 1px solid var(--outline-light);
+  color: var(--on-surface);
+  vertical-align: middle;
+}
+
+.stitch-table tbody tr:hover {
+  background: #fbfdfc;
+}
+
+/* ── Referral Card Grid ── */
+.referral-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
+}
+
+.referral-item-card {
+  background: var(--surface-white);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-xl);
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+  transition: transform 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.referral-item-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+  border-color: var(--primary);
+}
+
+.patient-name-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.doctor-origin-sub {
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  margin-top: 2px;
+}
+
+.referral-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 10px;
+}
+
+.clinical-notes-box {
+  background: var(--background);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-size: 12.5px;
+  color: var(--on-surface-variant);
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
+/* ── Ambulance Activity List ── */
+.fleet-row-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  background: var(--background);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-lg);
+  margin-bottom: 10px;
+}
+
+.fleet-vehicle-tag {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--primary);
+}
+
+/* ── Toast Alert ── */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 100;
+}
+
+.toast-pill {
+  background: var(--on-surface);
+  color: #ffffff;
+  padding: 12px 20px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-modal);
+  font-size: 13.5px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: slide-up 0.2s ease-out;
+}
+
+@keyframes slide-up {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* ── Login gate ──────────────────────────────────────────────────────────── */
+.login-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--background);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 28px;
+  border-radius: var(--radius-lg);
+  background: #ffffff;
+  border: 1px solid var(--outline-variant);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.login-brand .material-symbols-outlined {
+  font-size: 36px;
+  color: var(--primary);
+}
+
+.login-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--on-surface);
+}
+
+.login-subtitle {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--on-surface-variant);
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.login-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--on-surface-variant);
+}
+
+.login-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 12px;
+  font-size: 14px;
+  color: var(--on-surface);
+  background: #ffffff;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-md);
+}
+
+.login-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 104, 111, 0.14);
+}
+
+.login-error {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #8c1d18;
+  background: #ffdad6;
+  border-radius: var(--radius-md);
+}
+
+.login-submit {
+  margin-top: 4px;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--on-primary);
+  background: var(--primary);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.login-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.login-endpoint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  text-align: center;
+  color: var(--on-surface-variant);
+}

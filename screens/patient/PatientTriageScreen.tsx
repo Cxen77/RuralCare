@@ -1,0 +1,645 @@
+/**
+ * Patient Triage Screen
+ * AI Chat & Voice Triage using real triageEngine
+ */
+
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  View, Text, StyleSheet, ScrollView, TextInput,
+  KeyboardAvoidingView, Platform, TouchableOpacity, Animated, Alert,
+} from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
+import { Colors, Radii, Shadows, Spacing } from '../../constants/theme';
+import { useCarePlatform } from '../../context/CarePlatformContext';
+import { AIService } from '../../services/ai/AIService';
+import { DoctorMatchingService } from '../../services/ai/DoctorMatchingService';
+import { ModelManager } from '../../services/ai/ModelManager';
+import { TriageStateMachine } from '../../services/ai/TriageStateMachine';
+import { Button, Chip, Tabs } from '../../components/ui';
+import { resolveDistanceLabel } from '../../services/location/locationUtils';
+import { DoctorMapCard } from '../../components/maps/DoctorMapCard';
+
+interface Props {
+  onNavigate: (tab: string) => void;
+  onOpenBooking: (
+    doctorId: string,
+    name: string,
+    specialty: string,
+    clinic: string,
+    aiTriageSummary?: string,
+    aiSymptoms?: string[]
+  ) => void;
+}
+
+interface ChatMessage {
+  id: string;
+  sender: 'ai' | 'user';
+  text: string;
+  time: string;
+  source?: 'online_ai' | 'offline_ai' | 'rule_engine' | 'patient_manual';
+  doctorCard?: {
+    id: string;
+    name: string;
+    specialty: string;
+    clinic: string;
+    clinicAddress?: string;
+    latitude?: number;
+    longitude?: number;
+    distance: string;
+    aiTriageSummary?: string;
+    aiSymptoms?: string[];
+  };
+  doctorMapCard?: {
+    id: string;
+    name: string;
+    specialty: string;
+    clinicName: string;
+    clinicAddress?: string;
+    latitude?: number;
+    longitude?: number;
+    distanceKm?: number;
+  };
+}
+
+export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking }) => {
+  const { doctors, bookAppointment, patient, isOnline } = useCarePlatform();
+  const [mode, setMode] = useState<'chat' | 'voice'>('chat');
+  const [aiMode, setAiMode] = useState<'online' | 'offline'>('offline');
+  const [activeModel, setActiveModel] = useState<string>('');
+
+  // Voice state
+  const [isListening, setIsListening] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState('Tap to Speak');
+  const [extractedSymptoms, setExtractedSymptoms] = useState<string[]>([]);
+  const [triageSummary, setTriageSummary] = useState('');
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Chat state
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: '1',
+      sender: 'ai',
+      text: `Namaste ${(patient?.name || 'Patient').split(' ')[0]}! I am your RuralCare AI Triage Assistant. How are you feeling today? You can describe any symptoms in English, Hindi, or Bhojpuri.`,
+      time: formatTime(),
+      source: 'offline_ai',
+    },
+  ]);
+  const [inputText, setInputText] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const [conversationHistory, setConversationHistory] = useState<{ sender: string; text: string }[]>([]);
+  const chatScrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    TriageStateMachine.reset();
+  }, []);
+
+  useEffect(() => {
+    if (mode === 'chat') setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
+  }, [messages, isTyping, mode]);
+
+  useEffect(() => {
+    // Subscribe to ModelManager state updates
+    const unsubscribe = ModelManager.getInstance().addListener((_status, modelName) => {
+      setActiveModel(modelName);
+    });
+
+    // Ensure the local model is loaded (SmolLM2-360M, < 500 MB)
+    ModelManager.getInstance().loadModel(false).catch(err => {
+      console.warn('Could not load local model:', err);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (isListening) {
+      Animated.loop(Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.25, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+      ])).start();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [isListening]);
+
+  const [lastRecommendedDoctor, setLastRecommendedDoctor] = useState<any>(null);
+
+  const [quickReplies, setQuickReplies] = useState<string[]>([
+    'I have a fever & cough',
+    'I hurt my leg',
+    'Where is the doctor?',
+    'Stomach pain since yesterday',
+  ]);
+
+  const handleShowDoctorLocation = (doc: any) => {
+    const matchingDoc = doctors.find(d => d.id === doc.id) || doc;
+    const mapMsg: ChatMessage = {
+      id: Date.now().toString(),
+      sender: 'ai',
+      text: `Here is the clinic location and navigation for ${doc.name}:`,
+      time: formatTime(),
+      source: aiMode === 'online' ? 'online_ai' : 'offline_ai',
+      doctorMapCard: {
+        id: doc.id,
+        name: doc.name,
+        specialty: doc.specialty,
+        clinicName: doc.clinic || doc.clinicName || 'Ramnagar PHC',
+        clinicAddress: matchingDoc.clinicAddress || 'Main Road, Ramnagar, Vaishali, Bihar',
+        latitude: matchingDoc.latitude || 25.9856,
+        longitude: matchingDoc.longitude || 85.2281,
+        distanceKm: matchingDoc.distanceKm || 2.5,
+      },
+    };
+    setMessages(prev => [...prev, mapMsg]);
+  };
+
+  const handleSendMessage = (textToSend?: string) => {
+    const text = (textToSend || inputText).trim();
+    if (!text) return;
+
+    const userMsg: ChatMessage = { id: Date.now().toString(), sender: 'user', text, time: formatTime() };
+    setMessages(prev => [...prev, userMsg]);
+    if (!textToSend) setInputText('');
+    setIsTyping(true);
+
+    const history = [...conversationHistory, { sender: 'user', text }];
+    setConversationHistory(history);
+
+    // Check for explicit doctor location intent queries
+    const lower = text.toLowerCase();
+    const isLocationQuery =
+      lower.includes('where is') ||
+      lower.includes('location') ||
+      lower.includes('directions') ||
+      lower.includes('clinic address') ||
+      lower.includes('how to reach') ||
+      lower.includes('map');
+
+    if (isLocationQuery) {
+      const targetDoc = lastRecommendedDoctor || (doctors.length > 0 ? doctors[0] : null);
+      if (targetDoc) {
+        setTimeout(() => {
+          const distanceLabel = resolveDistanceLabel(
+  patient ? { latitude: patient.latitude, longitude: patient.longitude } : null,
+  targetDoc
+);
+
+const aiMsg: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            sender: 'ai',
+            text: `${targetDoc.name} is stationed at ${targetDoc.clinicName || targetDoc.clinic || 'Ramnagar PHC'}. Here is the clinic map and directions:`,
+            time: formatTime(),
+            source: aiMode === 'online' ? 'online_ai' : 'offline_ai',
+            doctorMapCard: {
+              id: targetDoc.id,
+              name: targetDoc.name,
+              specialty: targetDoc.specialty,
+              clinicName: targetDoc.clinicName || targetDoc.clinic || 'Ramnagar PHC',
+              clinicAddress: targetDoc.clinicAddress || 'Main Road, Ramnagar, Vaishali, Bihar',
+              latitude: targetDoc.latitude || 25.9856,
+              longitude: targetDoc.longitude || 85.2281,
+              ...distanceLabel,
+            },
+          };
+          setMessages(prev => [...prev, aiMsg]);
+          setConversationHistory(prev => [...prev, { sender: 'ai', text: aiMsg.text }]);
+          setIsTyping(false);
+        }, 300);
+        return;
+      }
+    }
+
+    AIService.processPatientMessage(text, history, aiMode).then((result) => {
+      let doctorCard: ChatMessage['doctorCard'] | undefined;
+
+      // Only display doctor card when triage is complete (readyForDoctorMatch === true) and not an emergency
+      if (!result.isEmergency && result.readyForDoctorMatch) {
+        const matches = DoctorMatchingService.match(result.assessment, doctors);
+        if (matches.length > 0) {
+          const matchedDoc = matches[0].doctor;
+          setLastRecommendedDoctor(matchedDoc);
+          doctorCard = {
+            id: matchedDoc.id,
+            name: matchedDoc.name,
+            specialty: matchedDoc.specialty,
+            clinic: matchedDoc.clinicName,
+            clinicAddress: matchedDoc.clinicAddress,
+            latitude: matchedDoc.latitude,
+            longitude: matchedDoc.longitude,
+            distance: resolveDistanceLabel(
+              patient ? { latitude: patient.latitude, longitude: patient.longitude } : null,
+              matchedDoc
+            ).text,
+            aiTriageSummary: result.formattedTriageNote || result.text,
+            aiSymptoms: result.assessment.symptoms?.length ? result.assessment.symptoms : ['General Consultation'],
+          };
+        }
+      }
+
+      if (result.suggestedQuestions && result.suggestedQuestions.length > 0) {
+        setQuickReplies(result.suggestedQuestions);
+      }
+
+      const aiMsg: ChatMessage = { 
+        id: (Date.now() + 1).toString(), 
+        sender: 'ai', 
+        text: result.text, 
+        time: formatTime(), 
+        source: result.assessment?.source,
+        doctorCard 
+      };
+      setMessages(prev => [...prev, aiMsg]);
+      setConversationHistory(prev => [...prev, { sender: 'ai', text: result.text }]);
+      setIsTyping(false);
+
+      if (result.isEmergency) {
+        Alert.alert('Emergency Detected', result.emergencyReason || 'Please press SOS immediately.');
+      }
+    }).catch(err => {
+      console.error(err);
+      setIsTyping(false);
+    });
+  };
+
+  const handleVoiceTriage = () => {
+    if (isListening) {
+      setIsListening(false);
+      setVoiceStatus('Ready • Tap to record more');
+    } else {
+      setIsListening(true);
+      setVoiceStatus('Listening... Speak now');
+      setTimeout(() => {
+        setIsListening(false);
+        setVoiceStatus('Analysis complete');
+        setExtractedSymptoms(['Fever (3 days)', 'Dry Cough', 'Body Ache']);
+        setTriageSummary('Patient reports moderate fever for 3 days accompanied by dry cough. Vitals stable. Recommend consultation with General Physician at Ramnagar PHC.');
+      }, 4000);
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView 
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+      <View style={styles.topBar}>
+        <Tabs
+          options={[
+            { value: 'chat', label: 'Chat Assistant', icon: 'chat' },
+            { value: 'voice', label: 'Voice Assistant', icon: 'mic' },
+          ]}
+          value={mode}
+          onChange={v => setMode(v as 'chat' | 'voice')}
+        />
+      </View>
+
+      {mode === 'chat' ? (
+        <View style={styles.chatWrapper}>
+          <View style={styles.chatHeader}>
+            <View style={styles.headerBadge}>
+              <View style={[styles.botCircle, aiMode === 'online' ? { backgroundColor: '#0284C7' } : { backgroundColor: Colors.primary }]}>
+                <MaterialIcons name={aiMode === 'online' ? 'cloud' : 'offline-bolt'} size={18} color={Colors.white} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.headerTitle}>Clinical AI Triage</Text>
+                <Text style={styles.headerSub}>
+                  {aiMode === 'online' ? 'Online Mode • Cloud AI API' : `Offline Mode • ${activeModel || 'Local AI'}`}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.resetChatBtn}
+                onPress={() => {
+                  TriageStateMachine.reset();
+                  setMessages([
+                    {
+                      id: Date.now().toString(),
+                      sender: 'ai',
+                      text: `Namaste ${(patient?.name || 'Patient').split(' ')[0]}! I am your RuralCare AI Triage Assistant. How are you feeling today? You can describe any symptoms in English, Hindi, or Bhojpuri.`,
+                      time: formatTime(),
+                      source: aiMode === 'online' ? 'online_ai' : 'offline_ai',
+                    },
+                  ]);
+                  setConversationHistory([]);
+                  setQuickReplies([
+                    'I have a fever & cough',
+                    'I hurt my leg',
+                    'Severe headache',
+                    'Stomach pain since yesterday',
+                  ]);
+                }}
+                activeOpacity={0.7}
+                accessibilityLabel="Reset conversation"
+              >
+                <MaterialIcons name="refresh" size={16} color={Colors.secondary} />
+                <Text style={styles.resetChatBtnText}>Reset</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Online / Offline AI Toggle Switch */}
+            <View style={styles.aiToggleWrap}>
+              <TouchableOpacity
+                style={[styles.aiToggleBtn, aiMode === 'online' && styles.aiToggleBtnActiveOnline]}
+                onPress={() => setAiMode('online')}
+                activeOpacity={0.8}
+                accessibilityLabel="Switch to Online Cloud AI"
+              >
+                <MaterialIcons
+                  name="cloud"
+                  size={13}
+                  color={aiMode === 'online' ? Colors.white : Colors.onSurfaceVariant}
+                />
+                <Text style={[styles.aiToggleBtnText, aiMode === 'online' && styles.aiToggleBtnTextActive]}>
+                  Online AI
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.aiToggleBtn, aiMode === 'offline' && styles.aiToggleBtnActiveOffline]}
+                onPress={() => setAiMode('offline')}
+                activeOpacity={0.8}
+                accessibilityLabel="Switch to Offline Local AI"
+              >
+                <MaterialIcons
+                  name="offline-bolt"
+                  size={13}
+                  color={aiMode === 'offline' ? Colors.white : Colors.onSurfaceVariant}
+                />
+                <Text style={[styles.aiToggleBtnText, aiMode === 'offline' && styles.aiToggleBtnTextActive]}>
+                  Offline Local AI
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <ScrollView ref={chatScrollRef} style={styles.messagesScroll} contentContainerStyle={styles.messagesContent} showsVerticalScrollIndicator={false}>
+            {messages.map(msg => {
+              const isUser = msg.sender === 'user';
+              return (
+                <View key={msg.id} style={[styles.msgRow, isUser ? styles.msgRowUser : styles.msgRowAi]}>
+                  {!isUser && (
+                    <View style={[styles.aiAvatar, msg.source === 'online_ai' && { backgroundColor: '#E0F2FE', borderColor: '#BAE6FD' }]}>
+                      <MaterialIcons
+                        name={msg.source === 'online_ai' ? 'cloud' : 'smart-toy'}
+                        size={15}
+                        color={msg.source === 'online_ai' ? '#0284C7' : Colors.primary}
+                      />
+                    </View>
+                  )}
+                  <View style={[styles.bubbleContainer, isUser && styles.bubbleContainerUser]}>
+                    <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAi]}>
+                      <Text style={[styles.msgText, isUser ? styles.msgTextUser : styles.msgTextAi]}>{msg.text}</Text>
+                      {msg.doctorCard && (
+                        <View style={styles.doctorCard}>
+                          <View style={styles.doctorCardHead}>
+                            <MaterialIcons name="verified" size={16} color={Colors.primary} />
+                            <Text style={styles.doctorCardTitle}>Recommended Doctor</Text>
+                          </View>
+                          <View style={styles.doctorRow}>
+                            <View style={styles.doctorAvBox}>
+                              <MaterialIcons name="person" size={20} color={Colors.secondary} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.doctorName}>{msg.doctorCard.name}</Text>
+                              <Text style={styles.doctorMeta}>
+                                {msg.doctorCard.specialty} • {msg.doctorCard.clinic} ({msg.doctorCard.distance})
+                              </Text>
+                            </View>
+                          </View>
+                          <View style={styles.doctorActionButtons}>
+                            <TouchableOpacity
+                              style={styles.viewLocBtn}
+                              onPress={() => handleShowDoctorLocation(msg.doctorCard!)}
+                              activeOpacity={0.8}
+                              accessibilityLabel={`View location of ${msg.doctorCard.name}`}
+                            >
+                              <MaterialIcons name="location-on" size={15} color={Colors.primary} />
+                              <Text style={styles.viewLocBtnText}>View Location</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={styles.bookBtnSmall}
+                              onPress={() => onOpenBooking(msg.doctorCard!.id, msg.doctorCard!.name, msg.doctorCard!.specialty, msg.doctorCard!.clinic, msg.doctorCard!.aiTriageSummary, msg.doctorCard!.aiSymptoms)}
+                              activeOpacity={0.85}
+                            >
+                              <MaterialIcons name="calendar-month" size={15} color={Colors.white} />
+                              <Text style={styles.bookBtnSmallText}>Book Slot</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      )}
+                      {msg.doctorMapCard && (
+                        <View style={{ marginTop: 8 }}>
+                          <DoctorMapCard
+                            doctor={msg.doctorMapCard}
+                            patientLocation={patient ? { latitude: patient.latitude, longitude: patient.longitude } : undefined}
+                            onBookPress={(docId, name, spec, clinic) =>
+                              onOpenBooking(docId, name, spec, clinic, 'Doctor consultation from Map Navigation', ['General Consultation'])
+                            }
+                          />
+                        </View>
+                      )}
+                    </View>
+                    <View style={[styles.metaRow, isUser && { justifyContent: 'flex-end' }]}>
+                      <Text style={styles.timestamp}>{msg.time}</Text>
+                      {!isUser && msg.source && (
+                        <View style={[
+                          styles.sourceTag,
+                          msg.source === 'online_ai'
+                            ? styles.sourceTagOnline
+                            : msg.source === 'offline_ai'
+                            ? styles.sourceTagOffline
+                            : styles.sourceTagRule
+                        ]}>
+                          <MaterialIcons
+                            name={msg.source === 'online_ai' ? 'cloud' : msg.source === 'offline_ai' ? 'offline-bolt' : 'memory'}
+                            size={10}
+                            color={msg.source === 'online_ai' ? '#0369A1' : msg.source === 'offline_ai' ? '#047857' : '#475569'}
+                          />
+                          <Text style={[
+                            styles.sourceTagText,
+                            { color: msg.source === 'online_ai' ? '#0369A1' : msg.source === 'offline_ai' ? '#047857' : '#475569' }
+                          ]}>
+                            {msg.source === 'online_ai' ? 'Online Cloud' : msg.source === 'offline_ai' ? `⚡ ${activeModel || 'Local AI'}` : 'Offline Engine'}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+
+            {isTyping && (
+              <View style={[styles.msgRow, styles.msgRowAi]}>
+                <View style={styles.aiAvatar}><MaterialIcons name="smart-toy" size={15} color={Colors.primary} /></View>
+                <View style={[styles.bubble, styles.bubbleAi, styles.typingBubble]}>
+                  <View style={styles.typingDot} /><View style={[styles.typingDot, { opacity: 0.7 }]} /><View style={[styles.typingDot, { opacity: 0.4 }]} />
+                  <Text style={styles.typingLabel}>AI analyzing...</Text>
+                </View>
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={styles.quickSection}>
+            <Text style={styles.quickLabel}>Suggested replies:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              {quickReplies.map(q => (
+                <TouchableOpacity key={q} style={styles.quickChip} onPress={() => handleSendMessage(q)} activeOpacity={0.7}>
+                  <Text style={styles.quickChipText}>{q}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          <View style={styles.inputSection}>
+            <View style={styles.inputPill}>
+              <TouchableOpacity style={styles.micBtn} onPress={() => setMode('voice')} accessibilityLabel="Switch to voice">
+                <MaterialIcons name="mic" size={20} color={Colors.primary} />
+              </TouchableOpacity>
+              <TextInput style={styles.chatInput} value={inputText} onChangeText={setInputText} placeholder="Type your symptoms..." placeholderTextColor={Colors.onSurfaceVariant} onSubmitEditing={() => handleSendMessage()} />
+              <TouchableOpacity style={[styles.sendBtn, !inputText.trim() && styles.sendBtnDisabled]} onPress={() => handleSendMessage()} disabled={!inputText.trim()} activeOpacity={0.8}>
+                <MaterialIcons name="send" size={18} color={inputText.trim() ? Colors.white : Colors.outline} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.voiceContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.voiceCard}>
+            <Text style={styles.voiceHeading}>AI Voice Symptom Intake</Text>
+            <Text style={styles.voiceHelper}>Tap microphone and speak naturally.</Text>
+            <View style={styles.micZone}>
+              {isListening && <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseAnim }] }]} />}
+              <TouchableOpacity style={[styles.voiceMicBtn, isListening && styles.voiceMicBtnActive]} onPress={handleVoiceTriage} activeOpacity={0.85}>
+                <MaterialIcons name={isListening ? 'graphic-eq' : 'mic'} size={42} color={Colors.white} />
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.voiceStatusText, isListening && { color: '#0F766E' }]}>{voiceStatus}</Text>
+
+            {extractedSymptoms.length > 0 && (
+              <View style={styles.symptomsBox}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                  <MaterialIcons name="fact-check" size={16} color={Colors.primary} />
+                  <Text style={styles.symptomsLabel}>Extracted Clinical Findings</Text>
+                </View>
+                <View style={styles.symptomsWrap}>
+                  {extractedSymptoms.map((s, i) => <Chip key={i} label={s} size="sm" icon="check" />)}
+                </View>
+              </View>
+            )}
+
+            {triageSummary !== '' && (
+              <View style={[styles.symptomsBox, { backgroundColor: Colors.primaryLight }]}>
+                <Text style={{ fontSize: 12, color: Colors.primaryDark, lineHeight: 17 }}>{triageSummary}</Text>
+              </View>
+            )}
+
+            <View style={styles.voiceActions}>
+              <View style={{ flex: 2 }}>
+                <Button label="Find Doctors" icon="person-search" block onPress={() => onNavigate('doctors')} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Button label="Reset" icon="refresh" variant="outline" block onPress={() => { setExtractedSymptoms([]); setTriageSummary(''); setVoiceStatus('Tap to Speak'); }} />
+              </View>
+            </View>
+
+            <View style={styles.disclaimer}>
+              <MaterialIcons name="info" size={16} color="#16A34A" />
+              <Text style={styles.disclaimerText}>AI provides preliminary guidance only. In emergencies, press SOS.</Text>
+            </View>
+          </View>
+        </ScrollView>
+      )}
+    </KeyboardAvoidingView>
+  );
+};
+
+function formatTime() {
+  return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.surface },
+  topBar: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.outlineLight },
+  chatWrapper: { flex: 1 },
+  chatHeader: { paddingHorizontal: Spacing.md, paddingVertical: 10, backgroundColor: Colors.surfaceContainerLowest, borderBottomWidth: 1, borderBottomColor: Colors.outlineLight, gap: 10 },
+  headerBadge: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  botCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', ...Shadows.sm },
+  headerTitle: { fontSize: 14, fontWeight: '700', color: Colors.secondary },
+  headerSub: { fontSize: 11, color: Colors.onSurfaceVariant, marginTop: 1 },
+  resetChatBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 5, borderRadius: Radii.full, backgroundColor: Colors.surfaceContainerLow, borderWidth: 1, borderColor: Colors.outlineLight },
+  resetChatBtnText: { fontSize: 11, fontWeight: '600', color: Colors.secondary },
+  aiToggleWrap: { flexDirection: 'row', backgroundColor: Colors.surfaceContainerLow, borderRadius: Radii.full, padding: 3, borderWidth: 1, borderColor: Colors.outlineLight },
+  aiToggleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 6, paddingHorizontal: 10, borderRadius: Radii.full },
+  aiToggleBtnActiveOnline: { backgroundColor: '#0284C7', ...Shadows.sm },
+  aiToggleBtnActiveOffline: { backgroundColor: Colors.primary, ...Shadows.sm },
+  aiToggleBtnText: { fontSize: 11.5, fontWeight: '600', color: Colors.onSurfaceVariant },
+  aiToggleBtnTextActive: { color: Colors.white, fontWeight: '700' },
+  messagesScroll: { flex: 1 },
+  messagesContent: { padding: Spacing.md, gap: 14, paddingBottom: 16 },
+  noticeBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: Colors.primaryFixedDim, paddingHorizontal: 12, paddingVertical: 8, borderRadius: Radii.md, marginBottom: 4 },
+  noticeText: { fontSize: 11, color: Colors.primaryDark, flex: 1, lineHeight: 15 },
+  msgRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, width: '100%' },
+  msgRowAi: { justifyContent: 'flex-start' },
+  msgRowUser: { justifyContent: 'flex-end' },
+  aiAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center', marginTop: 2, borderWidth: 1, borderColor: Colors.primaryFixedDim },
+  bubbleContainer: { maxWidth: '82%' },
+  bubbleContainerUser: { alignItems: 'flex-end' },
+  bubble: { paddingHorizontal: 14, paddingVertical: 11, borderRadius: 18, ...Shadows.sm },
+  bubbleAi: { backgroundColor: Colors.surfaceContainerLowest, borderWidth: 1, borderColor: Colors.outlineLight, borderTopLeftRadius: 4 },
+  bubbleUser: { backgroundColor: Colors.primary, borderTopRightRadius: 4 },
+  msgText: { fontSize: 13.5, lineHeight: 20 },
+  msgTextAi: { color: Colors.onSurface },
+  msgTextUser: { color: Colors.white, fontWeight: '500' },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, marginLeft: 4 },
+  timestamp: { fontSize: 10, color: Colors.outline },
+  sourceTag: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: Radii.full },
+  sourceTagOnline: { backgroundColor: '#E0F2FE' },
+  sourceTagOffline: { backgroundColor: '#DCFCE7' },
+  sourceTagRule: { backgroundColor: Colors.surfaceContainerLow },
+  sourceTagText: { fontSize: 9.5, fontWeight: '700' },
+  doctorCard: { backgroundColor: Colors.surfaceContainerLow, borderWidth: 1, borderColor: Colors.outlineLight, borderRadius: Radii.md, padding: 12, marginTop: 10, gap: 6 },
+  doctorCardHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  doctorCardTitle: { fontSize: 12, fontWeight: '700', color: Colors.secondary },
+  doctorRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.white, padding: 8, borderRadius: Radii.sm, borderWidth: 1, borderColor: Colors.outlineLight, marginVertical: 4 },
+  doctorAvBox: { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
+  doctorName: { fontSize: 12, fontWeight: '700', color: Colors.secondary },
+  doctorMeta: { fontSize: 10.5, color: Colors.onSurfaceVariant },
+  doctorActionButtons: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  viewLocBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: Colors.primary, paddingVertical: 8, borderRadius: Radii.sm },
+  viewLocBtnText: { color: Colors.primary, fontSize: 11.5, fontWeight: '700' },
+  bookBtnSmall: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, backgroundColor: Colors.primary, paddingVertical: 8, borderRadius: Radii.sm, ...Shadows.sm },
+  bookBtnSmallText: { color: Colors.white, fontSize: 11.5, fontWeight: '700' },
+  bookBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.primary, paddingVertical: 9, borderRadius: Radii.sm, marginTop: 4, ...Shadows.sm },
+  bookBtnText: { color: Colors.white, fontSize: 12, fontWeight: '700' },
+  typingBubble: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10 },
+  typingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.primary },
+  typingLabel: { fontSize: 11, color: Colors.onSurfaceVariant, fontStyle: 'italic', marginLeft: 4 },
+  quickSection: { backgroundColor: Colors.surfaceContainerLowest, borderTopWidth: 1, borderTopColor: Colors.outlineLight, paddingVertical: 8, paddingHorizontal: Spacing.md },
+  quickLabel: { fontSize: 10.5, fontWeight: '700', color: Colors.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+  quickChip: { backgroundColor: Colors.surfaceContainerLow, borderWidth: 1, borderColor: Colors.outlineLight, paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radii.full },
+  quickChipText: { fontSize: 11.5, fontWeight: '600', color: Colors.primary },
+  inputSection: { backgroundColor: Colors.surfaceContainerLowest, paddingHorizontal: Spacing.md, paddingVertical: 8, borderTopWidth: 1, borderTopColor: Colors.outlineLight },
+  inputPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surfaceContainerLow, borderWidth: 1, borderColor: Colors.outlineLight, borderRadius: Radii.full, paddingHorizontal: 8, paddingVertical: Platform.OS === 'ios' ? 8 : 4 },
+  micBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  chatInput: { flex: 1, fontSize: 13, color: Colors.onSurface, paddingHorizontal: 8 },
+  sendBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', ...Shadows.sm },
+  sendBtnDisabled: { backgroundColor: Colors.surfaceContainerHigh },
+  // Voice styles
+  voiceContent: { padding: Spacing.md, paddingBottom: 24 },
+  voiceCard: { backgroundColor: Colors.surfaceContainerLowest, borderWidth: 1, borderColor: Colors.outlineLight, borderRadius: Radii.xl, padding: Spacing.lg, alignItems: 'center', ...Shadows.sm },
+  voiceHeading: { fontSize: 18, fontWeight: '700', color: Colors.secondary },
+  voiceHelper: { fontSize: 12, color: Colors.onSurfaceVariant, textAlign: 'center', marginTop: 4 },
+  micZone: { width: 150, height: 150, alignItems: 'center', justifyContent: 'center', marginVertical: Spacing.md, position: 'relative' },
+  pulseRing: { position: 'absolute', width: 140, height: 140, borderRadius: 70, borderWidth: 3, borderColor: Colors.primary, opacity: 0.5 },
+  voiceMicBtn: { width: 86, height: 86, borderRadius: 43, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', ...Shadows.md },
+  voiceMicBtnActive: { backgroundColor: '#0F766E' },
+  voiceStatusText: { fontSize: 13.5, fontWeight: '700', color: Colors.primary, marginBottom: Spacing.md },
+  symptomsBox: { width: '100%', backgroundColor: Colors.surfaceContainerLow, borderRadius: Radii.lg, padding: 12, marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.outlineLight },
+  symptomsLabel: { fontSize: 11, fontWeight: '700', color: Colors.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 0.5 },
+  symptomsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  voiceActions: { flexDirection: 'row', gap: 8, width: '100%', marginBottom: 12 },
+  disclaimer: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0', borderRadius: Radii.md, padding: 10 },
+  disclaimerText: { fontSize: 11, color: '#166534', flex: 1, lineHeight: 15 },
+});

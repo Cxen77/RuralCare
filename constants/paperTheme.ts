@@ -1,0 +1,48 @@
+import { MD3LightTheme } from 'react-native-paper';
+import type { MD3Theme } from 'react-native-paper';
+import { Colors, Radii } from './theme';
+
+export const SwasthyaSetuTheme: MD3Theme = {
+  ...MD3LightTheme,
+  roundness: Radii.md,
+  colors: {
+    ...MD3LightTheme.colors,
+    primary: Colors.primary,
+    onPrimary: Colors.white,
+    primaryContainer: Colors.primaryFixed,
+    onPrimaryContainer: '#00444C',
+    secondary: Colors.secondary,
+    onSecondary: Colors.white,
+    secondaryContainer: Colors.secondaryContainer,
+    onSecondaryContainer: Colors.onSecondaryContainer,
+    tertiary: Colors.tertiaryAccent,
+    onTertiary: Colors.white,
+    tertiaryContainer: Colors.tertiaryContainer,
+    onTertiaryContainer: Colors.onTertiaryContainer,
+    error: Colors.error,
+    onError: Colors.white,
+    errorContainer: Colors.errorContainer,
+    onErrorContainer: Colors.onErrorContainer,
+    background: Colors.background,
+    onBackground: Colors.onSurface,
+    surface: Colors.background,
+    surfaceVariant: Colors.surfaceVariant,
+    surfaceDisabled: Colors.surfaceContainer,
+    onSurface: Colors.onSurface,
+    onSurfaceVariant: Colors.textSecondary,
+    outline: Colors.outlineLight,
+    outlineVariant: Colors.outlineVariant,
+    inverseSurface: Colors.secondary,
+    inverseOnSurface: Colors.white,
+    inversePrimary: Colors.primaryFixedDim,
+    backdrop: 'rgba(15, 28, 36, 0.6)',
+    elevation: {
+      level0: 'transparent',
+      level1: Colors.surfaceContainerLowest,
+      level2: Colors.surfaceContainerLowest,
+      level3: Colors.surfaceContainerLowest,
+      level4: Colors.surfaceContainerLowest,
+      level5: Colors.surfaceContainerLowest,
+    },
+  },
+};

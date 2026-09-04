@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "RuralCare Patient",
+    "slug": "ruralcare-patient",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "plugins": [
+      ["expo-location", {
+        "locationAlwaysAndWhenInUsePermission": "Allow RuralCare to access your location?"
+      }],
+      "@maplibre/maplibre-react-native"
+    ],
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f7fafa"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#087f8c"
+      },
+      "package": "com.anonymous.ruralcarepatient"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
