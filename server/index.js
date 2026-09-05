@@ -5,7 +5,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
 const env = require('./config/env');
-const { connectDb, dbState, disconnectDb } = require('./config/db');
+const { connectDb, dbState, getDbError, disconnectDb } = require('./config/db');
 const { requireAuth, optionalAuth } = require('./middleware/auth');
 const { notFound, errorHandler } = require('./middleware/error');
 const { ok } = require('./utils/response');
@@ -83,6 +83,7 @@ app.get('/health', (req, res) => {
     service: 'ruralcare-api',
     env: env.NODE_ENV,
     db,
+    dbError: db !== 'connected' ? getDbError() : undefined,
     uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
     time: new Date().toISOString(),
   });

@@ -1,20 +1,24 @@
 const mongoose = require('mongoose');
 const env = require('./env');
 
-const STATES = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+let lastDbError = null;
 
 async function connectDb() {
   mongoose.set('strictQuery', true);
   try {
-    await mongoose.connect(env.MONGODB_URI, { serverSelectionTimeoutMS: 3500 });
+    await mongoose.connect(env.MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+    lastDbError = null;
     return mongoose.connection;
   } catch (atlasErr) {
-    console.warn(`[db] Atlas connection failed (${atlasErr.message}). Attempting local MongoDB at 127.0.0.1:27017...`);
+    lastDbError = atlasErr.message;
+    console.warn(`[db] Primary connection failed (${atlasErr.message}). Attempting local fallback...`);
     try {
-      await mongoose.connect('mongodb://127.0.0.1:27017/ruralcare-db', { serverSelectionTimeoutMS: 3000 });
+      await mongoose.connect('mongodb://127.0.0.1:27017/ruralcare-db', { serverSelectionTimeoutMS: 2000 });
       console.log('[db] Connected to local MongoDB instance.');
+      lastDbError = null;
       return mongoose.connection;
-    } catch {
+    } catch (localErr) {
+      lastDbError = atlasErr.message;
       throw atlasErr;
     }
   }
@@ -24,8 +28,12 @@ function dbState() {
   return STATES[mongoose.connection.readyState] || 'unknown';
 }
 
+function getDbError() {
+  return lastDbError;
+}
+
 async function disconnectDb() {
   await mongoose.connection.close();
 }
 
-module.exports = { connectDb, dbState, disconnectDb };
+module.exports = { connectDb, dbState, getDbError, disconnectDb };
