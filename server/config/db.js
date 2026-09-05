@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const env = require('./env');
 
+const STATES = ['disconnected', 'connected', 'connecting', 'disconnecting'];
 let lastDbError = null;
 
 async function connectDb() {
