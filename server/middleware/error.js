@@ -24,6 +24,14 @@ function errorHandler(err, req, res, next) {
     const field = Object.keys(err.keyValue || {}).join(', ');
     return fail(res, 409, 'DUPLICATE_KEY', `Duplicate value for: ${field}`);
   }
+  if (
+    err.name === 'MongooseError' ||
+    err.name === 'MongooseServerSelectionError' ||
+    (err.message && err.message.includes('buffering timed out'))
+  ) {
+    console.error('[DATABASE ERROR]', err.message);
+    return fail(res, 503, 'DATABASE_UNAVAILABLE', 'Database is currently connecting or unavailable. Please check MongoDB Atlas connection and IP access.');
+  }
   console.error('[UNHANDLED ERROR]', err);
   const message = env.isProd ? 'Internal server error' : err.message;
   return fail(res, 500, 'INTERNAL_ERROR', message);

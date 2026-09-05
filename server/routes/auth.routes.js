@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
@@ -42,6 +43,9 @@ function publicUser(user) {
 router.post(
   '/login',
   asyncHandler(async (req, res) => {
+    if (mongoose.connection.readyState !== 1) {
+      throw new ApiError(503, 'DATABASE_UNAVAILABLE', 'Database is currently unavailable. Please verify MongoDB Atlas connection and IP access.');
+    }
     const { email, password } = req.body || {};
     if (!email || !password) {
       throw new ApiError(400, 'MISSING_CREDENTIALS', 'email and password are required.');
@@ -62,6 +66,9 @@ router.get(
   '/me',
   requireAuth,
   asyncHandler(async (req, res) => {
+    if (mongoose.connection.readyState !== 1) {
+      throw new ApiError(503, 'DATABASE_UNAVAILABLE', 'Database is currently unavailable.');
+    }
     const user = await User.findOne({ id: req.user.sub });
     if (!user) throw new ApiError(404, 'NOT_FOUND', 'User not found.');
     return ok(res, publicUser(user));

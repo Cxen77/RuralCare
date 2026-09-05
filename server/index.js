@@ -32,12 +32,38 @@ app.set('trust proxy', 1);
 // CSP disabled: the Vite portals are served from this origin and ship inline bootstrap
 // scripts. Re-enable with a nonce-based policy when the portals move behind a CDN.
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors({ origin: env.isProd ? env.ALLOWED_ORIGINS : true, credentials: true }));
+const corsOrigins = [
+  ...env.ALLOWED_ORIGINS,
+  'http://localhost:5173',
+  'http://localhost:8081',
+  'http://localhost:8082',
+  'http://localhost:3000',
+];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile app, curl, server-to-server)
+      if (!origin) return callback(null, true);
+      // In development, allow all origins
+      if (!env.isProd) return callback(null, true);
+      // Check configured origins
+      if (corsOrigins.includes(origin)) return callback(null, true);
+      // Allow any Vercel deployment (preview or production)
+      if (/^https:\/\/.*\.vercel\.app$/.test(origin)) return callback(null, true);
+      // Allow any Render deployment
+      if (/^https:\/\/.*\.onrender\.com$/.test(origin)) return callback(null, true);
+      return callback(null, false);
+    },
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: '1mb' }));
 
-// ── Public: static portals ───────────────────────────────────────────────
+// ── Public: static portals & favicon ──────────────────────────────────────
 const distDir = (client) => path.join(__dirname, '..', client, 'dist');
 
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 app.use('/assets', express.static(path.join(distDir('pharmacy-website'), 'assets')));
 app.use('/assets', express.static(path.join(distDir('hospital-website'), 'assets')));
 app.use('/pharmacy', express.static(distDir('pharmacy-website')));
