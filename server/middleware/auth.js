@@ -16,4 +16,17 @@ function requireAuth(req, res, next) {
   }
 }
 
-module.exports = { requireAuth };
+function optionalAuth(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (token) {
+    try {
+      req.user = jwt.verify(token, env.JWT_SECRET);
+    } catch (e) {
+      // Ignore token verification errors for optional authentication
+    }
+  }
+  return next();
+}
+
+module.exports = { requireAuth, optionalAuth };

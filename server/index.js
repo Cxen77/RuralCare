@@ -6,7 +6,7 @@ const rateLimit = require('express-rate-limit');
 
 const env = require('./config/env');
 const { connectDb, dbState, disconnectDb } = require('./config/db');
-const { requireAuth } = require('./middleware/auth');
+const { requireAuth, optionalAuth } = require('./middleware/auth');
 const { notFound, errorHandler } = require('./middleware/error');
 const { ok } = require('./utils/response');
 
@@ -76,8 +76,9 @@ const authLimiter = limited(30, 15 * 60 * 1000, 'RATE_LIMITED', 'Too many login 
 // Generous: all four clients poll this API on short intervals.
 const apiLimiter = limited(600, 60 * 1000, 'RATE_LIMITED', 'Too many requests. Slow down.');
 
-// ── Public: authentication ──────────────────────────────────────────────
+// ── Public / Semi-Public APIs ───────────────────────────────────────────
 app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/ai', apiLimiter, optionalAuth, aiRoutes);
 
 // ── Protected API ───────────────────────────────────────────────────────
 const api = express.Router();
@@ -93,7 +94,6 @@ api.use('/hospitals', hospitalsRoutes);
 api.use('/ambulances', ambulancesRoutes);
 api.use('/notifications', notificationsRoutes);
 api.use('/sync', syncRoutes);
-api.use('/ai', aiRoutes);
 api.use('/', lookupRoutes); // /doctors, /doctors/:id, /pharmacies, /patients/:id
 
 // `/api` is the only API prefix. The four clients are wired to it; unknown paths

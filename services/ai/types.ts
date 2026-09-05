@@ -41,4 +41,9 @@ export interface AIRouterResponse {
   readyForDoctorMatch?: boolean;
   structuredSummary?: StructuredTriageSummary;
   formattedTriageNote?: string;
+  doctors?: any[];
+  pharmacies?: any[];
+  route?: any;
+  confirmationNeeded?: any;
+  intent?: string;
 }

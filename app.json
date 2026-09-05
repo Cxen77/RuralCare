@@ -14,8 +14,7 @@
           "locationAlwaysAndWhenInUsePermission": "Allow RuralCare to access your location?"
         }
       ],
-      "@maplibre/maplibre-react-native",
-      "llama.rn"
+      "@maplibre/maplibre-react-native"
     ],
     "splash": {
       "image": "./assets/splash.png",

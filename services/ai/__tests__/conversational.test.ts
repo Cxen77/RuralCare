@@ -1,5 +1,4 @@
 import { AIService } from '../AIService';
-import { ModelManager } from '../ModelManager';
 import { StorageService } from '../../storageService';
 import { TriageStateMachine } from '../TriageStateMachine';
 
@@ -20,18 +19,6 @@ jest.mock('../../apiClient', () => ({
   },
 }));
 jest.mock('../../storageService');
-jest.mock('../ModelManager', () => {
-  return {
-    ModelManager: {
-      getInstance: jest.fn().mockReturnValue({
-        getStatus: jest.fn().mockReturnValue('MODEL_NOT_INSTALLED'),
-        getActiveModelName: jest.fn().mockReturnValue('SmolLM2-360M-Instruct'),
-        generateCompletion: jest.fn().mockResolvedValue('How long have you had these symptoms?'),
-        generateChatCompletion: jest.fn().mockResolvedValue('How long have you had these symptoms?'),
-      }),
-    },
-  };
-});
 
 describe('RuralCare Offline AI Triage Flow (Hybrid State Machine)', () => {
   beforeEach(() => {

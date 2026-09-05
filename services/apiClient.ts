@@ -274,4 +274,5 @@ export const apiClient = {
 
   // AI
   aiTriage: (data: unknown) => request<any>('POST', '/ai/triage', data),
+  aiChat: (data: unknown) => request<any>('POST', '/ai/chat', data),
 };

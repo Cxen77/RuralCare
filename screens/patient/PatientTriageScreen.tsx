@@ -13,7 +13,6 @@ import { Colors, Radii, Shadows, Spacing } from '../../constants/theme';
 import { useCarePlatform } from '../../context/CarePlatformContext';
 import { AIService } from '../../services/ai/AIService';
 import { DoctorMatchingService } from '../../services/ai/DoctorMatchingService';
-import { ModelManager } from '../../services/ai/ModelManager';
 import { TriageStateMachine } from '../../services/ai/TriageStateMachine';
 import { Button, Chip, Tabs } from '../../components/ui';
 import { resolveDistanceLabel } from '../../services/location/locationUtils';
@@ -59,6 +58,28 @@ interface ChatMessage {
     longitude?: number;
     distanceKm?: number;
   };
+  pharmacyCard?: {
+    id: string;
+    name: string;
+    address: string;
+    distanceKm?: number;
+    isJanAushadhi?: boolean;
+    phone?: string;
+    hasAllMedicines?: boolean;
+    availableCount?: number;
+    totalRequested?: number;
+  };
+  routeCard?: {
+    distanceKm?: number;
+    durationMinutes?: number;
+    mode?: string;
+    instructions?: string[];
+  };
+  confirmationPrompt?: {
+    action: string;
+    message: string;
+    details?: any;
+  };
 }
 
 export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking }) => {
@@ -97,19 +118,7 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
     if (mode === 'chat') setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, [messages, isTyping, mode]);
 
-  useEffect(() => {
-    // Subscribe to ModelManager state updates
-    const unsubscribe = ModelManager.getInstance().addListener((_status, modelName) => {
-      setActiveModel(modelName);
-    });
 
-    // Ensure the local model is loaded (SmolLM2-360M, < 500 MB)
-    ModelManager.getInstance().loadModel(false).catch(err => {
-      console.warn('Could not load local model:', err);
-    });
-
-    return unsubscribe;
-  }, []);
 
   useEffect(() => {
     if (isListening) {
@@ -209,11 +218,33 @@ const aiMsg: ChatMessage = {
       }
     }
 
-    AIService.processPatientMessage(text, history, aiMode).then((result) => {
+    AIService.processPatientMessage(
+      text,
+      history,
+      aiMode,
+      patient ? { latitude: patient.latitude, longitude: patient.longitude } : undefined
+    ).then((result) => {
       let doctorCard: ChatMessage['doctorCard'] | undefined;
+      let pharmacyCard: ChatMessage['pharmacyCard'] | undefined;
+      let routeCard: ChatMessage['routeCard'] | undefined;
 
-      // Only display doctor card when triage is complete (readyForDoctorMatch === true) and not an emergency
-      if (!result.isEmergency && result.readyForDoctorMatch) {
+      // 1. Structured Doctor Card from AI Agent or Local Triage
+      if (result.doctors && result.doctors.length > 0) {
+        const topDoc = result.doctors[0];
+        setLastRecommendedDoctor(topDoc);
+        doctorCard = {
+          id: topDoc.id,
+          name: topDoc.name,
+          specialty: topDoc.specialty,
+          clinic: topDoc.clinic || topDoc.clinicName,
+          clinicAddress: topDoc.address || topDoc.clinicAddress,
+          latitude: topDoc.latitude,
+          longitude: topDoc.longitude,
+          distance: topDoc.distanceKm ? `${topDoc.distanceKm} km away` : 'Nearby',
+          aiTriageSummary: result.formattedTriageNote || result.text,
+          aiSymptoms: result.assessment?.symptoms?.length ? result.assessment.symptoms : ['General Consultation'],
+        };
+      } else if (!result.isEmergency && result.readyForDoctorMatch) {
         const matches = DoctorMatchingService.match(result.assessment, doctors);
         if (matches.length > 0) {
           const matchedDoc = matches[0].doctor;
@@ -236,6 +267,32 @@ const aiMsg: ChatMessage = {
         }
       }
 
+      // 2. Structured Pharmacy Card
+      if (result.pharmacies && result.pharmacies.length > 0) {
+        const topPh = result.pharmacies[0];
+        pharmacyCard = {
+          id: topPh.id || topPh.pharmacyId,
+          name: topPh.name,
+          address: topPh.address,
+          distanceKm: topPh.distanceKm,
+          isJanAushadhi: topPh.isJanAushadhi,
+          phone: topPh.phone,
+          hasAllMedicines: topPh.hasAllMedicines,
+          availableCount: topPh.availableCount,
+          totalRequested: topPh.totalRequested
+        };
+      }
+
+      // 3. Structured Route Card
+      if (result.route) {
+        routeCard = {
+          distanceKm: result.route.distanceKm,
+          durationMinutes: result.route.durationMinutes,
+          mode: result.route.mode,
+          instructions: result.route.instructions
+        };
+      }
+
       if (result.suggestedQuestions && result.suggestedQuestions.length > 0) {
         setQuickReplies(result.suggestedQuestions);
       }
@@ -246,14 +303,17 @@ const aiMsg: ChatMessage = {
         text: result.text, 
         time: formatTime(), 
         source: result.assessment?.source,
-        doctorCard 
+        doctorCard,
+        pharmacyCard,
+        routeCard,
+        confirmationPrompt: result.confirmationNeeded
       };
       setMessages(prev => [...prev, aiMsg]);
       setConversationHistory(prev => [...prev, { sender: 'ai', text: result.text }]);
       setIsTyping(false);
 
       if (result.isEmergency) {
-        Alert.alert('Emergency Detected', result.emergencyReason || 'Please press SOS immediately.');
+        Alert.alert('Emergency Alert', result.emergencyReason || 'Critical red flag detected. Please seek emergency care or tap SOS immediately.');
       }
     }).catch(err => {
       console.error(err);
@@ -439,6 +499,75 @@ const aiMsg: ChatMessage = {
                           />
                         </View>
                       )}
+                      {msg.pharmacyCard && (
+                        <View style={[styles.doctorCard, { borderColor: '#A7F3D0', backgroundColor: '#F0FDF4' }]}>
+                          <View style={styles.doctorCardHead}>
+                            <MaterialIcons name="local-pharmacy" size={16} color="#059669" />
+                            <Text style={[styles.doctorCardTitle, { color: '#059669' }]}>
+                              {msg.pharmacyCard.isJanAushadhi ? 'Jan Aushadhi Kendra' : 'Verified Pharmacy'}
+                            </Text>
+                          </View>
+                          <View style={styles.doctorRow}>
+                            <View style={[styles.doctorAvBox, { backgroundColor: '#ECFDF5' }]}>
+                              <MaterialIcons name="store" size={20} color="#059669" />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.doctorName}>{msg.pharmacyCard.name}</Text>
+                              <Text style={styles.doctorMeta}>
+                                {msg.pharmacyCard.address} {msg.pharmacyCard.distanceKm ? `• ${msg.pharmacyCard.distanceKm} km` : ''}
+                              </Text>
+                              {msg.pharmacyCard.availableCount !== undefined && (
+                                <Text style={{ fontSize: 11, color: msg.pharmacyCard.hasAllMedicines ? '#059669' : '#D97706', marginTop: 2, fontWeight: '600' }}>
+                                  {msg.pharmacyCard.hasAllMedicines ? '✓ All prescribed medicines in stock' : `Stock: ${msg.pharmacyCard.availableCount}/${msg.pharmacyCard.totalRequested} items available`}
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+                        </View>
+                      )}
+                      {msg.routeCard && (
+                        <View style={[styles.doctorCard, { borderColor: '#93C5FD', backgroundColor: '#EFF6FF' }]}>
+                          <View style={styles.doctorCardHead}>
+                            <MaterialIcons name="directions" size={16} color="#2563EB" />
+                            <Text style={[styles.doctorCardTitle, { color: '#2563EB' }]}>
+                              Calculated Route ({msg.routeCard.mode || 'drive'})
+                            </Text>
+                          </View>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E40AF', marginTop: 4 }}>
+                            {msg.routeCard.distanceKm} km • ~{msg.routeCard.durationMinutes} mins travel time
+                          </Text>
+                          {msg.routeCard.instructions && msg.routeCard.instructions.length > 0 && (
+                            <Text style={{ fontSize: 11, color: '#3B82F6', marginTop: 4 }}>
+                              Directions: {msg.routeCard.instructions[0]}
+                            </Text>
+                          )}
+                        </View>
+                      )}
+                      {msg.confirmationPrompt && (
+                        <View style={[styles.doctorCard, { borderColor: '#FDE68A', backgroundColor: '#FFFBEB' }]}>
+                          <View style={styles.doctorCardHead}>
+                            <MaterialIcons name="help-outline" size={16} color="#D97706" />
+                            <Text style={[styles.doctorCardTitle, { color: '#D97706' }]}>Confirmation Required</Text>
+                          </View>
+                          <Text style={{ fontSize: 12, color: '#92400E', marginTop: 4 }}>
+                            {msg.confirmationPrompt.message}
+                          </Text>
+                          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                            <TouchableOpacity
+                              style={[styles.bookBtnSmall, { backgroundColor: '#D97706' }]}
+                              onPress={() => handleSendMessage('Yes, please confirm and book it.')}
+                            >
+                              <Text style={styles.bookBtnSmallText}>Yes, Confirm</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.viewLocBtn, { borderColor: '#D97706' }]}
+                              onPress={() => handleSendMessage('No, please cancel.')}
+                            >
+                              <Text style={[styles.viewLocBtnText, { color: '#D97706' }]}>Cancel</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      )}
                     </View>
                     <View style={[styles.metaRow, isUser && { justifyContent: 'flex-end' }]}>
                       <Text style={styles.timestamp}>{msg.time}</Text>
@@ -460,7 +589,7 @@ const aiMsg: ChatMessage = {
                             styles.sourceTagText,
                             { color: msg.source === 'online_ai' ? '#0369A1' : msg.source === 'offline_ai' ? '#047857' : '#475569' }
                           ]}>
-                            {msg.source === 'online_ai' ? 'Online Cloud' : msg.source === 'offline_ai' ? `⚡ ${activeModel || 'Local AI'}` : 'Offline Engine'}
+                            {msg.source === 'online_ai' ? 'Online Cloud' : msg.source === 'offline_ai' ? 'Offline Triage' : 'Offline Engine'}
                           </Text>
                         </View>
                       )}

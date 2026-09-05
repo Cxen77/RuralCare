@@ -10,6 +10,7 @@ module.exports = {
     '**/__tests__/**/*.+(ts|tsx|js)',
     '**/?(*.)+(spec|test).+(ts|tsx|js)',
   ],
+  testPathIgnorePatterns: ['<rootDir>/server/'],
   moduleNameMapper: {
     '^(.+)\\.(png|jpe?g|svg)$': 'ts-jest/mock-transform',
     '^(.+)\\.(webm|mp4|mov|ogg)$': 'ts-jest/mock-transform',
