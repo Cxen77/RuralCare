@@ -6,7 +6,13 @@ function requireRole(...roles) {
     if (!req.user) {
       return next(new ApiError(401, 'UNAUTHENTICATED', 'Authentication required.'));
     }
-    if (roles.length && !roles.includes(req.user.role)) {
+    const userRole = req.user.role;
+    const isAllowed =
+      roles.includes(userRole) ||
+      (userRole === 'SYSTEM_ADMIN' && roles.includes('ADMIN')) ||
+      (userRole === 'ADMIN' && roles.includes('SYSTEM_ADMIN'));
+
+    if (roles.length && !isAllowed) {
       return next(new ApiError(403, 'FORBIDDEN', `Requires role: ${roles.join(' or ')}.`));
     }
     return next();

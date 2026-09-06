@@ -85,7 +85,7 @@ interface ChatMessage {
 export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking }) => {
   const { doctors, bookAppointment, patient, isOnline } = useCarePlatform();
   const [mode, setMode] = useState<'chat' | 'voice'>('chat');
-  const [aiMode, setAiMode] = useState<'online' | 'offline'>('offline');
+  const [aiMode, setAiMode] = useState<'online' | 'offline'>('online');
   const [activeModel, setActiveModel] = useState<string>('');
 
   // Voice state
@@ -102,7 +102,7 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
       sender: 'ai',
       text: `Namaste ${(patient?.name || 'Patient').split(' ')[0]}! I am your RuralCare AI Triage Assistant. How are you feeling today? You can describe any symptoms in English, Hindi, or Bhojpuri.`,
       time: formatTime(),
-      source: 'offline_ai',
+      source: 'online_ai',
     },
   ]);
   const [inputText, setInputText] = useState('');

@@ -112,9 +112,9 @@ const users = [
   { id: 'u-p1', email: 'patient@ruralcare.dev', name: 'Rajesh Kumar', role: 'PATIENT', patientId: 'p1' },
   { id: 'u-d1', email: 'doctor@ruralcare.dev', name: 'Dr. Anita Sharma', role: 'DOCTOR', doctorId: 'd1' },
   { id: 'u-ph1', email: 'pharmacist@ruralcare.dev', name: 'Jan Aushadhi Kendra Ramnagar', role: 'PHARMACIST', pharmacyId: 'ph1' },
-  { id: 'u-hosp601-admin', email: 'hospital@ruralcare.dev', name: 'Ramnagar CHC Admin', role: 'HOSPITAL_ADMIN', hospitalId: 'hosp-601' },
-  { id: 'u-hosp601-staff', email: 'staff@ruralcare.dev', name: 'Ramnagar CHC Desk', role: 'HOSPITAL_STAFF', hospitalId: 'hosp-601' },
-  { id: 'u-admin', email: 'admin@ruralcare.dev', name: 'RuralCare Admin', role: 'ADMIN' },
+  { id: 'u-hosp601-admin', email: 'hospital@ruralcare.dev', name: 'Ramnagar Community Health Center', role: 'HOSPITAL_ADMIN', hospitalId: 'hosp-601' },
+  { id: 'u-hosp601-staff', email: 'staff@ruralcare.dev', name: 'Ramnagar CHC Emergency Desk', role: 'HOSPITAL_STAFF', hospitalId: 'hosp-601' },
+  { id: 'u-admin', email: 'admin@ruralcare.dev', name: 'RuralCare Administrator', role: 'SYSTEM_ADMIN' },
 ];
 
 async function seedCollection(Model, rows, label) {
@@ -128,16 +128,38 @@ async function seedCollection(Model, rows, label) {
 
 async function seedUsers() {
   let created = 0;
+  let updated = 0;
+  const passwordHash = await bcrypt.hash(DEV_PASSWORD, 10);
   for (const user of users) {
-    if (await User.exists({ id: user.id })) continue;
-    await User.create({
-      ...user,
-      passwordHash: await bcrypt.hash(DEV_PASSWORD, 10),
-      isActive: true,
+    const email = user.email.toLowerCase().trim();
+    const existing = await User.findOne({
+      $or: [{ email }, { id: user.id }],
     });
-    created += 1;
+
+    if (existing) {
+      existing.id = user.id;
+      existing.email = email;
+      existing.name = user.name;
+      existing.role = user.role;
+      existing.patientId = user.patientId;
+      existing.doctorId = user.doctorId;
+      existing.pharmacyId = user.pharmacyId;
+      existing.hospitalId = user.hospitalId;
+      existing.passwordHash = passwordHash;
+      existing.isActive = true;
+      await existing.save();
+      updated += 1;
+    } else {
+      await User.create({
+        ...user,
+        email,
+        passwordHash,
+        isActive: true,
+      });
+      created += 1;
+    }
   }
-  console.log(`  ${'users'.padEnd(17)} ${String(users.length).padStart(3)} total, ${created} created`);
+  console.log(`  ${'users'.padEnd(17)} ${String(users.length).padStart(3)} total, ${created} created, ${updated} updated`);
 }
 
 /**
@@ -172,6 +194,42 @@ async function reconcile() {
     }
   );
   if (hospBeds.modifiedCount) fixes.push('hospitals: set operational beds & departments');
+
+  const p1 = await Patient.findOne({ id: 'p1' });
+  if (p1 && (p1.name !== 'Rajesh Kumar' || p1.abhaId !== '91-4829-1029-4821')) {
+    await Patient.updateOne(
+      { id: 'p1' },
+      { $set: { name: 'Rajesh Kumar', abhaId: '91-4829-1029-4821', primaryPHC: 'Ramnagar PHC' } }
+    );
+    fixes.push('p1: verified Rajesh Kumar abhaId and primaryPHC');
+  }
+
+  const d1 = await Doctor.findOne({ id: 'd1' });
+  if (d1 && (d1.name !== 'Dr. Anita Sharma' || d1.clinicName !== 'Ramnagar PHC')) {
+    await Doctor.updateOne(
+      { id: 'd1' },
+      { $set: { name: 'Dr. Anita Sharma', clinicName: 'Ramnagar PHC' } }
+    );
+    fixes.push('d1: verified Dr. Anita Sharma clinicName');
+  }
+
+  const ph1 = await Pharmacy.findOne({ id: 'ph1' });
+  if (ph1 && ph1.name !== 'Jan Aushadhi Kendra Ramnagar') {
+    await Pharmacy.updateOne(
+      { id: 'ph1' },
+      { $set: { name: 'Jan Aushadhi Kendra Ramnagar' } }
+    );
+    fixes.push('ph1: verified Jan Aushadhi Kendra Ramnagar name');
+  }
+
+  const hosp601 = await Hospital.findOne({ id: 'hosp-601' });
+  if (hosp601 && hosp601.name !== 'Ramnagar Community Health Center') {
+    await Hospital.updateOne(
+      { id: 'hosp-601' },
+      { $set: { name: 'Ramnagar Community Health Center' } }
+    );
+    fixes.push('hosp-601: verified Ramnagar Community Health Center name');
+  }
 
   console.log(fixes.length ? `  repairs           ${fixes.join('; ')}` : '  repairs             none needed');
 }

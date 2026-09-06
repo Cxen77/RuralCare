@@ -29,7 +29,8 @@ export type Role =
   | 'PHARMACIST'
   | 'HOSPITAL_ADMIN'
   | 'HOSPITAL_STAFF'
-  | 'ADMIN';
+  | 'ADMIN'
+  | 'SYSTEM_ADMIN';
 
 export interface AuthUser {
   id: string;
@@ -275,4 +276,5 @@ export const apiClient = {
   // AI
   aiTriage: (data: unknown) => request<any>('POST', '/ai/triage', data),
   aiChat: (data: unknown) => request<any>('POST', '/ai/chat', data),
+  getActiveBaseUrl: () => activeApiBase,
 };
