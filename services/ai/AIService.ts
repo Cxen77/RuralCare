@@ -135,7 +135,7 @@ export class AIService {
         // ── ONLINE MODE (Calls RuralCare Express Backend) ──
         let timer: any;
         const timeoutPromise = new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error('Online timeout')), 15000);
+          timer = setTimeout(() => reject(new Error('Online timeout')), 38000);
         });
         try {
           const res = await Promise.race([

@@ -99,7 +99,8 @@ async function request<T>(
     const cleanHost = host.replace(/\/+$/, '');
     const url = `${cleanHost}/api${path}`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutMs = path.startsWith('/ai') ? 35000 : 12000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(url, {

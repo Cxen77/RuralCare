@@ -46,4 +46,5 @@ export interface AIRouterResponse {
   route?: any;
   confirmationNeeded?: any;
   intent?: string;
+  conversationId?: string;
 }

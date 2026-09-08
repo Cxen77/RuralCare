@@ -333,8 +333,16 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
         Alert.alert('Emergency Alert', result.emergencyReason || 'Critical red flag detected. Please seek emergency care or tap SOS immediately.');
       }
     }).catch(err => {
-      console.error(err);
+      console.error('[PatientTriageScreen] Chat error:', err);
       setIsTyping(false);
+      const errorMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        sender: 'ai',
+        text: 'I am having trouble connecting to the medical AI service right now. Please check your connection or try again in a moment.',
+        time: formatTime(),
+        source: 'rule_engine',
+      };
+      setMessages(prev => [...prev, errorMsg]);
     });
   };
 

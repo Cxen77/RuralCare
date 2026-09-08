@@ -8,10 +8,14 @@ const BaseProvider = require('./BaseProvider');
 
 class OpenRouterProvider extends BaseProvider {
   constructor(config = {}) {
+    let chosenModel = config.model || process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
+    if (chosenModel.includes(':free') || chosenModel.includes('minimax-m3')) {
+      chosenModel = 'meta-llama/llama-3.3-70b-instruct';
+    }
     super({
       name: 'openrouter',
       apiKey: config.apiKey || process.env.OPENROUTER_API_KEY || (process.env.AI_PROVIDER === 'openrouter' ? process.env.AI_API_KEY : null),
-      model: config.model || process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct',
+      model: chosenModel,
       baseUrl: config.baseUrl || 'https://openrouter.ai/api/v1'
     });
   }
@@ -49,10 +53,10 @@ class OpenRouterProvider extends BaseProvider {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     try {
-      const res = await fetch(`${this.baseUrl}/chat/completions`, {
+      let res = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -64,12 +68,31 @@ class OpenRouterProvider extends BaseProvider {
         signal: controller.signal
       });
 
-      clearTimeout(timeoutId);
-
       if (!res.ok) {
         const errorText = await res.text().catch(() => '');
-        throw new Error(`OpenRouter error ${res.status}: ${errorText.slice(0, 150)}`);
+        if (res.status === 404 && this.model !== 'meta-llama/llama-3.3-70b-instruct') {
+          console.warn(`[OpenRouterProvider] Model "${this.model}" failed (${errorText.slice(0, 80)}). Retrying with "meta-llama/llama-3.3-70b-instruct"...`);
+          this.model = 'meta-llama/llama-3.3-70b-instruct';
+          payload.model = this.model;
+          res = await fetch(`${this.baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${this.apiKey}`,
+              'HTTP-Referer': 'https://ruralcare.health',
+              'X-Title': 'RuralCare AI'
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+          });
+        }
+        if (!res.ok) {
+          const retryErr = await res.text().catch(() => '');
+          throw new Error(`OpenRouter error ${res.status}: ${retryErr.slice(0, 150) || errorText.slice(0, 150)}`);
+        }
       }
+
+      clearTimeout(timeoutId);
 
       const data = await res.json();
       const choice = data.choices?.[0];
