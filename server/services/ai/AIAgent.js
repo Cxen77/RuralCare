@@ -20,20 +20,20 @@ const ProviderFactory = require('./providerFactory');
 const { ToolRegistry } = require('./tools/toolRegistry');
 const Conversation = require('../../models/Conversation');
 
-const MAX_TOOL_ITERATIONS = 5;
+const MAX_TOOL_ITERATIONS = 3;
 
 const SYSTEM_PROMPT = `You are RuralCare AI, an empathetic, highly capable clinical AI assistant for patients and rural health workers in India.
 You have access to real RuralCare backend tools that query the live database and Geoapify routing services.
+Emergency red flags have already been checked deterministically before this step.
 
 CRITICAL RULES:
 1. NEVER invent or hallucinate doctors, clinics, pharmacies, medicine availability, coordinates, distances, travel times, or prescriptions.
-2. ALWAYS use the provided backend tools whenever real medical, doctor, clinic, pharmacy, prescription, or route information is needed.
-3. If a patient describes symptoms, first identify urgency and appropriate specialist (e.g. using recommendSpecialty or analyzeSymptoms). Then search for real nearby specialists using findSpecialists or findDoctors.
-4. If a patient asks about prescription medicines or pharmacies, use getPrescription, extractPrescriptionMedicines, or findPharmaciesWithMedicines to retrieve real inventory.
-5. If a patient needs travel directions, use calculateRoute or calculateMultiWaypointRoute (e.g. Patient -> Doctor -> Pharmacy).
+2. ALWAYS use the provided backend tools when real medical, doctor, clinic, pharmacy, prescription, or route information is needed.
+3. If a patient describes symptoms or asks for care, call findSpecialists or findDoctors directly in your first turn.
+4. If a patient asks about medicines or pharmacies, use findPharmaciesWithMedicines or getPrescription.
+5. Be fast and efficient: call needed tools in parallel on the first turn. As soon as you receive tool data, immediately provide your final clear, reassuring 2-3 sentence answer.
 6. NEVER diagnose definitively and never alter a prescription.
-7. If life-threatening symptoms (chest pain, stroke, breathing failure, severe hemorrhage) are detected, prioritize immediate SOS 108 ambulance advice.
-8. Keep conversational explanations polite, clear, and reassuring (2 to 3 sentences in conversational response). The system will automatically render your tool results as rich interactive cards in the mobile app.`;
+7. If life-threatening symptoms (chest pain, stroke, breathing failure, severe hemorrhage) are described, advise calling SOS 108 immediately.`;
 
 class AIAgent {
   /**
@@ -118,7 +118,7 @@ class AIAgent {
       return this.runDeterministicFallback(trimmedMessage, convId, context);
     }
 
-    const tools = ToolRegistry.getOpenAIToolDefinitions();
+    const tools = ToolRegistry.getOpenAIToolDefinitions().filter(t => t.function?.name !== 'checkEmergencyRedFlags');
     const collectedData = {
       doctors: [],
       pharmacies: [],

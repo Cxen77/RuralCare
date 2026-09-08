@@ -22,8 +22,10 @@ function resolveInitialApiBase(): string {
 
 const CANDIDATE_HOSTS = [
   resolveInitialApiBase(),
+  'https://ruralcare-sia2.onrender.com',
   'http://localhost:4000',
   'http://127.0.0.1:4000',
+  'http://192.168.1.107:4000',
   'http://192.168.1.11:4000',
 ].filter(Boolean) as string[];
 
