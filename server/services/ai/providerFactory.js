@@ -38,15 +38,35 @@ class ProviderFactory {
     }
   }
 
+  static getProviderChain() {
+    const groq = new GroqProvider();
+    const gemini = new GeminiProvider();
+    const openrouter = new OpenRouterProvider();
+
+    // Priority order: 1st Groq -> 2nd Gemini -> 3rd OpenRouter
+    const chain = [groq, gemini, openrouter];
+
+    // If an explicit AI_PROVIDER is set, elevate it to first
+    const primaryName = (process.env.AI_PROVIDER || '').toLowerCase().trim();
+    if (primaryName && primaryName !== 'groq') {
+      const idx = chain.findIndex(p => p.name === primaryName);
+      if (idx > 0) {
+        const [elevated] = chain.splice(idx, 1);
+        chain.unshift(elevated);
+      }
+    }
+
+    const configured = chain.filter(p => p.isConfigured());
+    return configured.length > 0 ? configured : [groq];
+  }
+
   static getActiveProvider() {
-    const requested = process.env.AI_PROVIDER || 'groq';
-    return this.createProvider(requested);
+    return this.getProviderChain()[0];
   }
 
   static getFallbackProvider() {
-    const fallbackName = process.env.AI_FALLBACK_PROVIDER;
-    if (!fallbackName) return null;
-    return this.createProvider(fallbackName);
+    const chain = this.getProviderChain();
+    return chain.length > 1 ? chain[1] : null;
   }
 }
 

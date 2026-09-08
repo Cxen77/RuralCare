@@ -8,10 +8,14 @@ const BaseProvider = require('./BaseProvider');
 
 class GeminiProvider extends BaseProvider {
   constructor(config = {}) {
+    let chosenModel = config.model || process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+    if (chosenModel === 'gemini-1.5-flash' || chosenModel === 'gemini-2.5-flash') {
+      chosenModel = 'gemini-3.5-flash';
+    }
     super({
       name: 'gemini',
       apiKey: config.apiKey || process.env.GEMINI_API_KEY || (process.env.AI_PROVIDER === 'gemini' ? process.env.AI_API_KEY : null),
-      model: config.model || process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+      model: chosenModel,
       baseUrl: 'https://generativelanguage.googleapis.com/v1beta'
     });
   }
@@ -28,31 +32,21 @@ class GeminiProvider extends BaseProvider {
         // System instruction handled separately in Gemini
         continue;
       } else if (msg.role === 'tool') {
-        // Tool execution result
+        const textContent = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
         contents.push({
-          role: 'function',
+          role: 'user',
           parts: [{
-            functionResponse: {
-              name: msg.name || 'tool_response',
-              response: { content: msg.content }
-            }
+            text: `[Tool "${msg.name || 'tool'}" returned]: ${textContent}`
           }]
         });
       } else if (msg.role === 'assistant') {
-        const parts = [];
-        if (msg.content) parts.push({ text: msg.content });
-        if (msg.tool_calls && msg.tool_calls.length > 0) {
-          for (const tc of msg.tool_calls) {
-            parts.push({
-              functionCall: {
-                name: tc.name || tc.function?.name,
-                args: tc.args || (tc.function?.arguments ? (typeof tc.function.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function.arguments) : {})
-              }
-            });
-          }
-        }
-        if (parts.length > 0) {
-          contents.push({ role: 'model', parts });
+        if (msg.raw_parts && Array.isArray(msg.raw_parts)) {
+          contents.push({ role: 'model', parts: msg.raw_parts });
+        } else {
+          contents.push({
+            role: 'model',
+            parts: [{ text: msg.content || '[Executed clinical lookup tools]' }]
+          });
         }
       } else {
         // User message
@@ -95,7 +89,7 @@ class GeminiProvider extends BaseProvider {
 
     const url = `${this.baseUrl}/models/${this.model}:generateContent?key=${this.apiKey}`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     try {
       const res = await fetch(url, {
@@ -127,7 +121,8 @@ class GeminiProvider extends BaseProvider {
           toolCalls.push({
             id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
             name: part.functionCall.name,
-            args: part.functionCall.args || {}
+            args: part.functionCall.args || {},
+            thoughtSignature: part.thoughtSignature
           });
         }
       }
@@ -137,6 +132,7 @@ class GeminiProvider extends BaseProvider {
         tool_calls: toolCalls,
         finish_reason: candidate?.finishReason || 'STOP',
         raw_message: candidate?.content,
+        raw_parts: parts,
         usage: data.usageMetadata || null
       };
     } catch (err) {

@@ -8,10 +8,14 @@ const BaseProvider = require('./BaseProvider');
 
 class GroqProvider extends BaseProvider {
   constructor(config = {}) {
+    let chosenModel = config.model || process.env.GROQ_MODEL || 'qwen/qwen3.8-27b';
+    if (chosenModel.includes('llama-3.3') || chosenModel === 'llama-3.3-70b-versatile') {
+      chosenModel = 'qwen/qwen3.8-27b';
+    }
     super({
       name: 'groq',
       apiKey: config.apiKey || process.env.GROQ_API_KEY || (process.env.AI_PROVIDER === 'groq' ? process.env.AI_API_KEY : null),
-      model: config.model || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+      model: chosenModel,
       baseUrl: config.baseUrl || 'https://api.groq.com/openai/v1'
     });
   }
@@ -46,10 +50,11 @@ class GroqProvider extends BaseProvider {
     if (Array.isArray(tools) && tools.length > 0) {
       payload.tools = tools;
       payload.tool_choice = 'auto';
+      payload.parallel_tool_calls = false;
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     try {
       const res = await fetch(`${this.baseUrl}/chat/completions`, {

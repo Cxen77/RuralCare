@@ -108,13 +108,14 @@ class AIAgent {
     // Add current user message
     messages.push({ role: 'user', content: trimmedMessage });
 
-    // 3. Obtain active provider & fallback provider
-    let provider = ProviderFactory.getActiveProvider();
-    const fallbackProvider = ProviderFactory.getFallbackProvider();
+    // 3. Obtain provider chain in priority order (Groq -> Gemini -> OpenRouter)
+    const providerChain = ProviderFactory.getProviderChain();
+    let providerIndex = 0;
+    let provider = providerChain[0];
 
     // If no provider is configured with an API key, use deterministic fallback
-    if (!provider.isConfigured() && (!fallbackProvider || !fallbackProvider.isConfigured())) {
-      console.warn('[AIAgent] No AI provider API key found. Using deterministic guideline fallback.');
+    if (!provider || !provider.isConfigured()) {
+      console.warn('[AIAgent] No configured AI provider found. Using deterministic guideline fallback.');
       return this.runDeterministicFallback(trimmedMessage, convId, context);
     }
 
@@ -138,31 +139,21 @@ class AIAgent {
       iterations++;
       let response = null;
 
-      try {
-        response = await provider.chat({
-          messages,
-          tools,
-          systemPrompt: SYSTEM_PROMPT
-        });
-      } catch (providerErr) {
-        console.warn(`[AIAgent] Provider "${provider.name}" error on iteration ${iterations}:`, providerErr.message);
-
-        // Try fallback provider if configured
-        if (fallbackProvider && fallbackProvider.isConfigured() && fallbackProvider.name !== provider.name) {
-          try {
-            console.log(`[AIAgent] 🔄 Shifting to fallback provider: "${fallbackProvider.name}"`);
-            response = await fallbackProvider.chat({
-              messages,
-              tools,
-              systemPrompt: SYSTEM_PROMPT
-            });
-            provider = fallbackProvider; // Continue with fallback
-          } catch (fallbackErr) {
-            console.error(`[AIAgent] Fallback provider "${fallbackProvider.name}" also failed:`, fallbackErr.message);
-            break;
+      while (providerIndex < providerChain.length) {
+        provider = providerChain[providerIndex];
+        try {
+          response = await provider.chat({
+            messages,
+            tools,
+            systemPrompt: SYSTEM_PROMPT
+          });
+          break; // Provider responded successfully
+        } catch (providerErr) {
+          console.warn(`[AIAgent] Provider "${provider.name}" error on iteration ${iterations}:`, providerErr.message);
+          providerIndex++;
+          if (providerIndex < providerChain.length) {
+            console.log(`[AIAgent] 🔄 Shifting to next priority provider: "${providerChain[providerIndex].name}"`);
           }
-        } else {
-          break;
         }
       }
 
@@ -183,8 +174,10 @@ class AIAgent {
         tool_calls: response.raw_message?.tool_calls || toolCalls.map(tc => ({
           id: tc.id,
           type: 'function',
-          function: { name: tc.name, arguments: JSON.stringify(tc.args) }
-        }))
+          function: { name: tc.name, arguments: JSON.stringify(tc.args) },
+          thoughtSignature: tc.thoughtSignature
+        })),
+        raw_parts: response.raw_parts
       });
 
       // Execute each tool call requested by the AI
