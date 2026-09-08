@@ -50,7 +50,7 @@ class APInexProvider extends BaseProvider {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const timeoutId = setTimeout(() => controller.abort(), 40000);
 
     try {
       const res = await fetch(`${this.baseUrl}/chat/completions`, {

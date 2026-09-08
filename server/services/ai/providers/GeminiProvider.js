@@ -8,10 +8,7 @@ const BaseProvider = require('./BaseProvider');
 
 class GeminiProvider extends BaseProvider {
   constructor(config = {}) {
-    let chosenModel = config.model || process.env.GEMINI_MODEL || 'gemini-3.5-flash';
-    if (chosenModel === 'gemini-1.5-flash' || chosenModel === 'gemini-2.5-flash') {
-      chosenModel = 'gemini-3.5-flash';
-    }
+    const chosenModel = config.model || process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
     super({
       name: 'gemini',
       apiKey: config.apiKey || process.env.GEMINI_API_KEY || (process.env.AI_PROVIDER === 'gemini' ? process.env.AI_API_KEY : null),

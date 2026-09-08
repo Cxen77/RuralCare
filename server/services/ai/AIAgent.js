@@ -119,7 +119,26 @@ class AIAgent {
       return this.runDeterministicFallback(trimmedMessage, convId, context);
     }
 
-    const tools = ToolRegistry.getOpenAIToolDefinitions().filter(t => t.function?.name !== 'checkEmergencyRedFlags');
+    const CORE_TOOL_NAMES = new Set([
+      'analyzeSymptoms',
+      'recommendSpecialty',
+      'findDoctors',
+      'findSpecialists',
+      'getDoctorDetails',
+      'getUserLocation',
+      'findNearbyPharmacies',
+      'findPharmaciesWithMedicines',
+      'calculateRoute',
+      'createAppointment',
+      'getPrescription'
+    ]);
+
+    const tools = ToolRegistry.getOpenAIToolDefinitions().filter(t => CORE_TOOL_NAMES.has(t.function?.name));
+    let systemPrompt = SYSTEM_PROMPT;
+    if (context.location?.latitude && context.location?.longitude) {
+      systemPrompt += `\nPATIENT LOCATION: Latitude ${context.location.latitude}, Longitude ${context.location.longitude}. Use these coordinates directly for doctor, clinic, and pharmacy proximity searches.`;
+    }
+
     const collectedData = {
       doctors: [],
       pharmacies: [],
@@ -145,7 +164,7 @@ class AIAgent {
           response = await provider.chat({
             messages,
             tools,
-            systemPrompt: SYSTEM_PROMPT
+            systemPrompt
           });
           break; // Provider responded successfully
         } catch (providerErr) {
@@ -196,6 +215,11 @@ class AIAgent {
           content: JSON.stringify(toolResult)
         });
       }
+    }
+
+    if (!finalAnswer && collectedData.doctors.length === 0 && collectedData.pharmacies.length === 0 && !collectedData.specialty) {
+      console.warn('[AIAgent] AI providers produced no clinical data. Running deterministic fallback.');
+      return this.runDeterministicFallback(trimmedMessage, convId, context);
     }
 
     if (!finalAnswer) {
