@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View, TouchableOpacity, Alert } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Radii, Shadows, Spacing } from '../constants/theme';
-import { Appointment, Patient } from '../data/mock';
+import { Appointment, Patient } from '../types';
 import { Avatar, Badge, Button, Card, Divider, IconButton, Input } from '../components/ui';
+import { AppointmentChatModal } from '../components/communication/AppointmentChatModal';
+import { CallModal } from '../components/communication/CallModal';
+import { CallType } from '../services/communication/WebRTCCallingEngine';
+import { api } from '../services/api';
 
 interface ConsultScreenProps {
   patient: Patient;
@@ -27,7 +31,13 @@ export const ConsultScreen: React.FC<ConsultScreenProps> = ({
   const [notes, setNotes] = useState('');
   const [diagnosis, setDiagnosis] = useState('');
 
+  // Communication modal states
+  const [chatVisible, setChatVisible] = useState(false);
+  const [callVisible, setCallVisible] = useState(false);
+  const [callType, setCallType] = useState<CallType>('video');
+
   return (
+    <>
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
       {/* Patient Banner */}
       <Card radius={Radii.lg}>
@@ -39,20 +49,59 @@ export const ConsultScreen: React.FC<ConsultScreenProps> = ({
               <Badge label={appointment?.mode === 'video' ? 'Video Visit' : 'In Clinic'} tone="navy" />
             </View>
             <Text style={styles.patientMeta}>
-              {patient.age}Y • {patient.gender} • Blood Group {patient.bloodGroup}
+              {patient.age ? `${patient.age}Y` : ''}{patient.gender ? ` • ${patient.gender}` : ''}{patient.bloodGroup ? ` • Blood Group ${patient.bloodGroup}` : ''}
             </Text>
-            <Text style={styles.patientMeta}>ABHA ID: {patient.abhaId}</Text>
+            <Text style={styles.patientMeta}>ABHA ID: {patient.abhaId || 'Pending'}</Text>
           </View>
         </View>
 
-        {!!patient.allergies.length && (
+        {Array.isArray(patient.allergies) && patient.allergies.length > 0 && (
           <View style={[styles.allergyBox, styles.dangerBox]}>
             <MaterialIcons name="warning-amber" size={16} color={Colors.errorDark} />
             <Text style={styles.allergyText}>Allergies: {patient.allergies.join(', ')}</Text>
           </View>
         )}
 
-        <Button label="Call Patient" icon="call" variant="outline" size="sm" onPress={() => {}} style={{ alignSelf: 'flex-start', marginTop: 8 }} />
+        {/* Real-time Consultation Communication Row */}
+        {appointment?.id && (
+          <View style={styles.commActionRow}>
+            <TouchableOpacity
+              style={styles.commChatBtn}
+              onPress={() => setChatVisible(true)}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="chat" size={16} color={Colors.primary} />
+              <Text style={styles.commChatText}>Chat with Patient</Text>
+            </TouchableOpacity>
+
+            {appointment.mode === 'video' ? (
+              <>
+                <TouchableOpacity
+                  style={styles.commVoiceBtn}
+                  onPress={() => {
+                    setCallType('voice');
+                    setCallVisible(true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <MaterialIcons name="call" size={16} color={Colors.primary} />
+                  <Text style={styles.commVoiceText}>Voice</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.commVideoBtn}
+                  onPress={() => {
+                    setCallType('video');
+                    setCallVisible(true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <MaterialIcons name="videocam" size={16} color={Colors.white} />
+                  <Text style={styles.commVideoText}>Video</Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
+          </View>
+        )}
       </Card>
 
       {/* AI Triage Summary */}
@@ -113,6 +162,29 @@ export const ConsultScreen: React.FC<ConsultScreenProps> = ({
         onPress={onComplete}
       />
     </ScrollView>
+
+    {appointment?.id && (
+      <>
+        <AppointmentChatModal
+          visible={chatVisible}
+          onClose={() => setChatVisible(false)}
+          appointmentId={appointment.id}
+          participantName={patient.name}
+          appointmentDate={appointment.date || ''}
+          appointmentTime={appointment.time || ''}
+          appointmentMode={appointment.mode === 'video' ? 'Teleconsultation' : 'In-Person'}
+          api={api}
+        />
+        <CallModal
+          visible={callVisible}
+          onClose={() => setCallVisible(false)}
+          peerName={patient.name}
+          appointmentId={appointment.id}
+          callType={callType}
+        />
+      </>
+    )}
+    </>
   );
 };
 
@@ -158,6 +230,64 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.errorDark,
     flex: 1,
+  },
+  commActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  commChatBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: Radii.md,
+    backgroundColor: Colors.primaryLight,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  commChatText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  commVideoBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 9,
+    paddingHorizontal: 8,
+    borderRadius: Radii.md,
+    backgroundColor: Colors.primary,
+  },
+  commVideoText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  commVoiceBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 9,
+    paddingHorizontal: 8,
+    borderRadius: Radii.md,
+    backgroundColor: Colors.white,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+  },
+  commVoiceText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.primary,
   },
   sectionRow: {
     flexDirection: 'row',

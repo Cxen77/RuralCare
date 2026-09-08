@@ -11,6 +11,7 @@ const ReservationSchema = new mongoose.Schema({
   items: [{
     id: { type: String },
     drugName: { type: String },
+    medicine: { type: String },
     genericName: { type: String },
     dosage: { type: String },
     form: { type: String },

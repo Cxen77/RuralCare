@@ -66,8 +66,10 @@ const doctorTools = {
         if (latitude != null && longitude != null && doc.latitude != null && doc.longitude != null) {
           dist = haversineDistanceKm(latitude, longitude, doc.latitude, doc.longitude);
         }
+        const docId = doc.id || (doc._id ? doc._id.toString() : '');
         return {
-          doctorId: doc.id,
+          id: docId,
+          doctorId: docId,
           name: doc.name,
           specialty: doc.specialty,
           qualification: doc.qualification,
@@ -149,17 +151,19 @@ const doctorTools = {
         return { found: false, message: `Doctor with id ${doctorId} was not found in RuralCare registry.` };
       }
 
+      const docId = doc.id || (doc._id ? doc._id.toString() : doctorId);
       return {
         found: true,
-        doctorId: doc.id,
+        id: docId,
+        doctorId: docId,
         name: doc.name,
         specialty: doc.specialty,
         qualification: doc.qualification,
         registrationNumber: doc.registrationNumber,
         clinicName: doc.clinicName,
         clinicAddress: doc.clinicAddress,
-        latitude: doc.latitude ?? 25.9856,
-        longitude: doc.longitude ?? 85.2281,
+        latitude: doc.latitude,
+        longitude: doc.longitude,
         consultationFee: doc.consultationFee || 0,
         ayushmanPaneled: !!doc.ayushmanPaneled,
         teleconsultation: !!doc.teleconsultation,

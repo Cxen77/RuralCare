@@ -9,6 +9,7 @@ const { connectDb, dbState, getDbError, disconnectDb } = require('./config/db');
 const { requireAuth, optionalAuth } = require('./middleware/auth');
 const { notFound, errorHandler } = require('./middleware/error');
 const { ok } = require('./utils/response');
+const asyncHandler = require('./utils/asyncHandler');
 
 const authRoutes = require('./routes/auth.routes');
 const appointmentsRoutes = require('./routes/appointments.routes');
@@ -24,6 +25,8 @@ const notificationsRoutes = require('./routes/notifications.routes');
 const lookupRoutes = require('./routes/lookup.routes');
 const syncRoutes = require('./routes/sync.routes');
 const aiRoutes = require('./routes/ai.routes');
+const presenceRoutes = require('./routes/presence.routes');
+const { initCallSignaling } = require('./services/callSignaling.service');
 
 const app = express();
 const startedAt = Date.now();
@@ -106,6 +109,8 @@ const apiLimiter = limited(600, 60 * 1000, 'RATE_LIMITED', 'Too many requests. S
 // ── Public / Semi-Public APIs ───────────────────────────────────────────
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/ai', apiLimiter, optionalAuth, aiRoutes);
+app.use('/api/presence', apiLimiter, optionalAuth, presenceRoutes);
+app.get('/api/appointments/availability', apiLimiter, optionalAuth, asyncHandler(appointmentsRoutes.getDoctorAvailabilityHandler));
 
 // ── Protected API ───────────────────────────────────────────────────────
 const api = express.Router();
@@ -153,6 +158,9 @@ async function start() {
   server = app.listen(env.PORT, () => {
     console.log(`[api] RuralCare listening on http://localhost:${env.PORT} (${env.NODE_ENV})`);
   });
+
+  // Attach WebSocket call signaling to the HTTP server
+  initCallSignaling(server);
 }
 
 async function shutdown(signal) {

@@ -25,7 +25,11 @@ import {
   resolveDistanceLabel,
   isValidCoordinate,
 } from '../../services/location/locationUtils';
-import { buildDoctorMarkers, buildPatientMarker } from '../../services/location/mapData';
+import {
+  buildDoctorMarkers,
+  buildPatientMarker,
+  buildPharmacyMarkers,
+} from '../../services/location/mapData';
 
 interface Props {
   focusDoctorId?: string | null;
@@ -40,13 +44,19 @@ interface Props {
 }
 
 export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking }) => {
-  const { doctors, patient, updatePatientProfile } = useCarePlatform();
+  const { doctors, pharmacies, patient, updatePatientProfile } = useCarePlatform();
 
   const [selectedDoctorId, setSelectedDoctorId] = useState<string | null>(null);
+  const [selectedPharmacyId, setSelectedPharmacyId] = useState<string | null>(null);
   const [focusNonce, setFocusNonce] = useState(0);
   const [fitNonce, setFitNonce] = useState(0);
-  const [center, setCenter] = useState({ lat: 25.9856, lng: 85.2281 });
-  const [zoom, setZoom] = useState(13);
+  const hasSavedPatientCoords = isValidCoordinate(patient?.latitude, patient?.longitude);
+  const initialCenter = hasSavedPatientCoords
+    ? { lat: patient!.latitude as number, lng: patient!.longitude as number }
+    : { lat: 25.9856, lng: 85.2281 };
+
+  const [center, setCenter] = useState(initialCenter);
+  const [zoom, setZoom] = useState(hasSavedPatientCoords ? 14 : 13);
 
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsNotice, setGpsNotice] = useState<string | null>(null);
@@ -60,10 +70,15 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
 
   const patientMarker = useMemo(() => buildPatientMarker(patient), [patient]);
   const doctorMarkers = useMemo(() => buildDoctorMarkers(doctors), [doctors]);
-  const markers: MapMarker[] = useMemo(
-    () => (patientMarker ? [patientMarker, ...doctorMarkers] : doctorMarkers),
-    [patientMarker, doctorMarkers]
-  );
+  const pharmacyMarkers = useMemo(() => buildPharmacyMarkers(pharmacies), [pharmacies]);
+  const markers: MapMarker[] = useMemo(() => {
+    const list: MapMarker[] = [];
+    if (patientMarker) list.push(patientMarker);
+    list.push(...doctorMarkers);
+    list.push(...pharmacyMarkers);
+    return list;
+  }, [patientMarker, doctorMarkers, pharmacyMarkers]);
+
   const doctorsWithoutCoords = doctors.filter(
     d => !isValidCoordinate(d.latitude, d.longitude)
   ).length;
@@ -71,6 +86,11 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
   const selectedDoctor = useMemo(
     () => doctors.find(d => d.id === selectedDoctorId) || null,
     [doctors, selectedDoctorId]
+  );
+
+  const selectedPharmacy = useMemo(
+    () => pharmacies.find(p => p.id === selectedPharmacyId) || null,
+    [pharmacies, selectedPharmacyId]
   );
 
   const distanceLabel = useMemo(
@@ -82,11 +102,21 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
     [patient, selectedDoctor]
   );
 
+  const pharmacyDistanceLabel = useMemo(
+    () =>
+      resolveDistanceLabel(
+        patient ? { latitude: patient.latitude, longitude: patient.longitude } : null,
+        selectedPharmacy
+      ),
+    [patient, selectedPharmacy]
+  );
+
   // Focus a specific doctor when navigated from Doctors list / chat
   useEffect(() => {
     if (focusDoctorId) {
       const doc = doctors.find(d => d.id === focusDoctorId);
       if (doc && isValidCoordinate(doc.latitude, doc.longitude)) {
+        setSelectedPharmacyId(null);
         setSelectedDoctorId(doc.id);
         setCenter({ lat: doc.latitude as number, lng: doc.longitude as number });
         setZoom(15);
@@ -96,19 +126,31 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusDoctorId]);
 
+  const hasCenteredOnPatientRef = useRef(false);
+
   // Refresh saved-patient center when the patient profile location changes
   useEffect(() => {
-    if (patient && isValidCoordinate(patient.latitude, patient.longitude)) {
-      setCenter({ lat: patient.latitude as number, lng: patient.longitude as number });
+    if (isValidCoordinate(patient?.latitude, patient?.longitude)) {
+      setCenter({ lat: patient!.latitude as number, lng: patient!.longitude as number });
+      if (!hasCenteredOnPatientRef.current) {
+        hasCenteredOnPatientRef.current = true;
+        setZoom(14);
+        setFocusNonce(n => n + 1);
+      }
     } else {
-      // Try to get live location if profile has no saved location
+      // Try to get live location if profile genuinely has no saved location
       (async () => {
         try {
           const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
           if (status === 'granted') {
             const loc = await ExpoLocation.getLastKnownPositionAsync();
-            if (loc?.coords) {
+            if (loc?.coords && isValidCoordinate(loc.coords.latitude, loc.coords.longitude)) {
               setCenter({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+              if (!hasCenteredOnPatientRef.current) {
+                hasCenteredOnPatientRef.current = true;
+                setZoom(14);
+                setFocusNonce(n => n + 1);
+              }
             }
           }
         } catch (e) {
@@ -152,8 +194,22 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
 
   const handleMarkerPress = useCallback(
     (id: string) => {
+      if (id.startsWith('pharmacy-')) {
+        const phId = id.replace('pharmacy-', '');
+        const ph = pharmacies.find(p => p.id === phId);
+        if (!ph) return;
+        setSelectedDoctorId(null);
+        setSelectedPharmacyId(ph.id);
+        if (isValidCoordinate(ph.latitude, ph.longitude)) {
+          setCenter({ lat: ph.latitude as number, lng: ph.longitude as number });
+          setZoom(15);
+          setFocusNonce(n => n + 1);
+        }
+        return;
+      }
       const doc = doctors.find(d => d.id === id);
       if (!doc) return; // patient marker press — ignore
+      setSelectedPharmacyId(null);
       setSelectedDoctorId(id);
       if (isValidCoordinate(doc.latitude, doc.longitude)) {
         setCenter({ lat: doc.latitude as number, lng: doc.longitude as number });
@@ -161,7 +217,7 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
         setFocusNonce(n => n + 1);
       }
     },
-    [doctors]
+    [doctors, pharmacies]
   );
 
   const handleRecenterGps = async () => {
@@ -240,7 +296,7 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
         <View style={{ flex: 1 }}>
           <Text style={styles.heading}>Care Map</Text>
           <Text style={styles.subheading}>
-            {doctorMarkers.length} of {doctors.length} doctors mapped • OpenStreetMap
+            {doctorMarkers.length} doctors • {pharmacyMarkers.length} pharmacies mapped • OpenStreetMap
           </Text>
         </View>
         <TouchableOpacity
@@ -420,13 +476,73 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
           </View>
         )}
 
+        {/* Selected pharmacy card */}
+        {selectedPharmacy && (
+          <View style={styles.doctorCard}>
+            <View style={styles.cardHead}>
+              <View style={[styles.docAvatar, { backgroundColor: '#059669' }]}>
+                <MaterialIcons name="local-pharmacy" size={20} color={Colors.white} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.docName}>{selectedPharmacy.name}</Text>
+                <Text style={styles.docMeta}>
+                  {selectedPharmacy.isJanAushadhi ? 'Jan Aushadhi Kendra' : 'Verified Pharmacy'} • {selectedPharmacy.operatingHours || 'Open'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setSelectedPharmacyId(null)}
+                accessibilityLabel="Close pharmacy details"
+              >
+                <MaterialIcons name="close" size={20} color={Colors.onSurfaceVariant} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.addressRow}>
+              <MaterialIcons name="location-on" size={14} color={Colors.onSurfaceVariant} />
+              <Text style={styles.addressText} numberOfLines={2}>
+                {selectedPharmacy.address || 'Address not available'}
+              </Text>
+            </View>
+
+            <View style={styles.distanceRow}>
+              <MaterialIcons name="near-me" size={14} color="#059669" />
+              <Text style={styles.distanceText}>{pharmacyDistanceLabel.text}</Text>
+              {!pharmacyDistanceLabel.isEstimate && (
+                <Text style={styles.distanceHint}>(straight line)</Text>
+              )}
+            </View>
+
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                style={[styles.primaryBtn, { backgroundColor: '#059669' }]}
+                onPress={() => {
+                  if (isValidCoordinate(selectedPharmacy.latitude, selectedPharmacy.longitude)) {
+                    openDirections(
+                      selectedPharmacy.latitude as number,
+                      selectedPharmacy.longitude as number,
+                      selectedPharmacy.name
+                    );
+                  } else {
+                    Alert.alert('No map coordinates', 'This pharmacy has no saved map location yet.');
+                  }
+                }}
+                activeOpacity={0.85}
+                accessibilityLabel="Get directions to the pharmacy"
+              >
+                <MaterialIcons name="directions" size={16} color={Colors.white} />
+                <Text style={styles.primaryBtnText}>Directions to Pharmacy</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Empty state: compact chip — does not obscure the map */}
-        {doctorMarkers.length === 0 && (
+        {doctorMarkers.length === 0 && pharmacyMarkers.length === 0 && (
           <View style={styles.emptyChipWrap} pointerEvents="box-none">
             <View style={styles.emptyChip}>
               <MaterialIcons name="location-off" size={16} color={Colors.outline} />
               <Text style={styles.emptyChipText}>
-                No doctors mapped nearby • Check the Doctors tab
+                No facilities mapped nearby • Check the Doctors tab
               </Text>
             </View>
           </View>

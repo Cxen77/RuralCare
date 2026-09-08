@@ -67,6 +67,46 @@ router.get(
 );
 
 router.get(
+  '/pharmacies/:id',
+  asyncHandler(async (req, res) => {
+    const pharmacy = await Pharmacy.findOne({ id: req.params.id });
+    if (!pharmacy) throw new ApiError(404, 'NOT_FOUND', 'Pharmacy not found.');
+    return ok(res, pharmacy);
+  })
+);
+
+router.patch(
+  '/pharmacies/:id',
+  asyncHandler(async (req, res) => {
+    if (req.user.role === 'PHARMACIST' && req.user.pharmacyId && req.user.pharmacyId !== req.params.id) {
+      throw new ApiError(403, 'FORBIDDEN', 'Cannot update another pharmacy profile.');
+    }
+    const pharmacy = await Pharmacy.findOne({ id: req.params.id });
+    if (!pharmacy) throw new ApiError(404, 'NOT_FOUND', 'Pharmacy not found.');
+
+    delete req.body.id;
+    delete req.body._id;
+    Object.assign(pharmacy, req.body);
+    if (req.body.latitude !== undefined && req.body.longitude !== undefined) {
+      pharmacy.locationUpdatedAt = new Date();
+    }
+    await pharmacy.save();
+
+    await writeAudit({
+      actorId: req.user.sub,
+      actorRole: req.user.role,
+      action: 'pharmacy.update',
+      entityType: 'pharmacy',
+      entityId: pharmacy.id,
+      before: {},
+      after: { name: pharmacy.name, address: pharmacy.address, latitude: pharmacy.latitude, longitude: pharmacy.longitude },
+    });
+
+    return ok(res, pharmacy);
+  })
+);
+
+router.get(
   '/patients',
   asyncHandler(async (req, res) => {
     const rows = await Patient.find().sort({ name: 1 });

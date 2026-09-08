@@ -7,6 +7,7 @@ import { ApiError, onSessionExpired, session, type AuthUser } from '../services/
 
 interface AuthState {
   user: AuthUser | null;
+  token: string | null;
   doctorId: string | null;
   restoring: boolean;
   signingIn: boolean;
@@ -25,6 +26,7 @@ export const useAuth = (): AuthState => {
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [token, setToken] = useState<string | null>(session.getToken());
   const [restoring, setRestoring] = useState(true);
   const [signingIn, setSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,13 +41,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setRestoring(false);
         return;
       }
-      // A stored token can be expired; /auth/me is the cheapest check. A network
-      // failure must not sign the doctor out mid-clinic.
+      setToken(session.getToken());
       try {
         const fresh = await session.me();
-        if (!cancelled) setUser(fresh);
+        if (!cancelled) {
+          setUser(fresh);
+          setToken(session.getToken());
+        }
       } catch {
-        if (!cancelled) setUser(stored);
+        if (!cancelled) {
+          setUser(stored);
+          setToken(session.getToken());
+        }
       } finally {
         if (!cancelled) setRestoring(false);
       }
@@ -59,6 +66,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     onSessionExpired(() => {
       setUser(null);
+      setToken(null);
       setError('Your session expired. Please sign in again.');
     });
     return () => onSessionExpired(null);
@@ -68,7 +76,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setSigningIn(true);
     setError(null);
     try {
-      setUser(await session.login(email.trim(), password));
+      const loggedUser = await session.login(email.trim(), password);
+      setUser(loggedUser);
+      setToken(session.getToken());
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Sign in failed. Please try again.');
       throw e;
@@ -80,11 +90,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const logout = useCallback(async () => {
     await session.logout();
     setUser(null);
+    setToken(null);
     setError(null);
   }, []);
 
   const value: AuthState = {
     user,
+    token,
     doctorId: user?.doctorId ?? null,
     restoring,
     signingIn,

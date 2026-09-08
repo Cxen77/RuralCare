@@ -9,15 +9,26 @@ import { useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+function resolveInitialApiBase(): string {
+  if (typeof window !== 'undefined' && window.location) {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = params.get('apiUrl');
+    if (fromQuery) return fromQuery.replace(/\/+$/, '');
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return 'http://localhost:4000';
+    }
+  }
+  return (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/+$/, '');
+}
+
 const CANDIDATE_HOSTS = [
-  process.env.EXPO_PUBLIC_API_URL,
-  'http://192.168.1.11:4000',
-  'http://127.0.0.1:4000',
+  resolveInitialApiBase(),
   'http://localhost:4000',
-  'http://192.168.1.5:4000',
+  'http://127.0.0.1:4000',
+  'http://192.168.1.11:4000',
 ].filter(Boolean) as string[];
 
-let activeApiBase = (process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.11:4000').replace(/\/+$/, '');
+let activeApiBase = resolveInitialApiBase();
 
 export const API_BASE = activeApiBase;
 
@@ -124,6 +135,17 @@ export const api = {
   get: <T,>(path: string) => request<T>('GET', path),
   post: <T,>(path: string, body?: unknown) => request<T>('POST', path, body),
   patch: <T,>(path: string, body?: unknown) => request<T>('PATCH', path, body),
+  delete: <T,>(path: string) => request<T>('DELETE', path),
+
+  // Appointment Chat Messages
+  getAppointmentMessages: (appointmentId: string) =>
+    request<any[]>('GET', `/appointments/${appointmentId}/messages`),
+  sendAppointmentMessage: (appointmentId: string, text: string) =>
+    request<any>('POST', `/appointments/${appointmentId}/messages`, { text }),
+
+  // Teleconsultation Video Access
+  getVideoAccess: (appointmentId: string) =>
+    request<any>('GET', `/appointments/${appointmentId}/video/access`),
 };
 
 export const session = {
@@ -160,6 +182,8 @@ export const session = {
   logout: () => clearSession(),
 
   me: () => request<AuthUser>('GET', '/auth/me'),
+
+  getToken: () => token,
 };
 
 /**

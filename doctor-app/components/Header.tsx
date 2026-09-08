@@ -1,35 +1,79 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Text, StyleSheet, View, TouchableOpacity } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Radii, Shadows, Spacing } from '../constants/theme';
-import { DOCTOR } from '../data/mock';
+import { DoctorProfileData } from '../types';
 import { Avatar, Badge, IconButton } from './ui';
 import { LocationPicker, ConfirmedLocation } from './maps/LocationPicker';
+import { api } from '../services/api';
 
 interface HeaderProps {
+  doctor?: DoctorProfileData | null;
+  doctorId?: string;
+  onUpdateDoctor?: (updated: DoctorProfileData) => void;
   onBellPress: () => void;
   onProfilePress?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onBellPress, onProfilePress }) => {
+export const Header: React.FC<HeaderProps> = ({
+  doctor,
+  doctorId,
+  onUpdateDoctor,
+  onBellPress,
+  onProfilePress,
+}) => {
   const [clinicLocation, setClinicLocation] = useState<{
     latitude: number;
     longitude: number;
     address: string;
   }>({
-    latitude: 25.9856,
-    longitude: 85.2281,
-    address: 'Main Road, Ramnagar, Vaishali, Bihar',
+    latitude: doctor?.latitude || 25.9856,
+    longitude: doctor?.longitude || 85.2281,
+    address: doctor?.clinicAddress || 'Main Road, Ramnagar, Vaishali, Bihar',
   });
   const [pickerVisible, setPickerVisible] = useState(false);
 
-  const handleLocationConfirmed = (loc: ConfirmedLocation) => {
+  useEffect(() => {
+    if (doctor && doctor.latitude != null && doctor.longitude != null) {
+      setClinicLocation({
+        latitude: doctor.latitude,
+        longitude: doctor.longitude,
+        address: doctor.clinicAddress || 'Main Road, Ramnagar, Vaishali, Bihar',
+      });
+    }
+  }, [doctor?.clinicAddress, doctor?.latitude, doctor?.longitude]);
+
+  const docName = doctor?.name || 'Dr. RuralCare';
+  const facilityName = doctor?.facility || 'RuralCare Clinic';
+
+  const handleLocationConfirmed = async (loc: ConfirmedLocation) => {
     setClinicLocation({
       latitude: loc.latitude,
       longitude: loc.longitude,
       address: loc.address,
     });
     setPickerVisible(false);
+
+    const docId = doctorId || doctor?.id;
+    if (docId) {
+      try {
+        await api.patch(`/doctors/${docId}`, {
+          clinicAddress: loc.address,
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+        });
+        if (onUpdateDoctor && doctor) {
+          onUpdateDoctor({
+            ...doctor,
+            clinicAddress: loc.address,
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+          });
+        }
+      } catch (err) {
+        console.error('[Header] Failed to persist clinic location:', err);
+      }
+    }
   };
 
   return (
@@ -42,7 +86,7 @@ export const Header: React.FC<HeaderProps> = ({ onBellPress, onProfilePress }) =
             accessibilityLabel="View Doctor Profile"
           >
             <Avatar
-              name={DOCTOR.name}
+              name={docName}
               icon="medical-services"
               size={42}
               online
@@ -51,7 +95,7 @@ export const Header: React.FC<HeaderProps> = ({ onBellPress, onProfilePress }) =
           <View style={styles.titleWrapper}>
             <TouchableOpacity onPress={onProfilePress} activeOpacity={0.7}>
               <View style={styles.nameRow}>
-                <Text style={styles.appName}>{DOCTOR.name}</Text>
+                <Text style={styles.appName}>{docName}</Text>
                 <View style={styles.onlinePill}>
                   <View style={styles.onlineDot} />
                   <Text style={styles.onlinePillText}>Online</Text>
@@ -66,7 +110,7 @@ export const Header: React.FC<HeaderProps> = ({ onBellPress, onProfilePress }) =
               <View style={styles.locationRow}>
                 <MaterialIcons name="local-hospital" size={13} color={Colors.primary} />
                 <Text style={styles.locationText} numberOfLines={1}>
-                  {DOCTOR.facility} • {clinicLocation.address.split(',')[0]}
+                  {facilityName} • {clinicLocation.address.split(',')[0]}
                 </Text>
                 <MaterialIcons name="arrow-drop-down" size={14} color={Colors.onSurfaceVariant} />
               </View>

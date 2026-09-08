@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Colors, Radii, Spacing } from '../constants/theme';
-import { Patient } from '../data/mock';
+import { Patient } from '../types';
 import { Avatar, Badge, Button, Card, Chip, Divider, Input } from '../components/ui';
 
 interface PatientsScreenProps {
@@ -21,9 +21,9 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({ patients, status
   const [filter, setFilter] = useState('all');
 
   const filtered = patients.filter(p => {
-    const matchesQuery =
-      p.name.toLowerCase().includes(query.toLowerCase()) ||
-      p.village.toLowerCase().includes(query.toLowerCase());
+    const nameMatch = (p.name || '').toLowerCase().includes(query.toLowerCase());
+    const villageMatch = (p.village || '').toLowerCase().includes(query.toLowerCase());
+    const matchesQuery = nameMatch || villageMatch;
     const status = statusById[p.id];
     const matchesFilter =
       filter === 'all' ||
@@ -64,10 +64,12 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({ patients, status
                   )}
                 </View>
                 <Text style={styles.meta}>
-                  {patient.age}Y • {patient.gender} • {patient.bloodGroup}
+                  {patient.age ? `${patient.age}Y` : ''}{patient.gender ? ` • ${patient.gender}` : ''}{patient.bloodGroup ? ` • ${patient.bloodGroup}` : ''}
                 </Text>
-                <Text style={styles.village}>{patient.village} • ABHA {patient.abhaId.slice(-4)}</Text>
-                {!!patient.allergies.length && (
+                <Text style={styles.village}>
+                  {patient.village || 'Local'}{patient.abhaId ? ` • ABHA ${patient.abhaId.slice(-4)}` : ''}
+                </Text>
+                {Array.isArray(patient.allergies) && patient.allergies.length > 0 && (
                   <View style={styles.allergyRow}>
                     {patient.allergies.map(a => (
                       <Badge key={a} label={a} tone="danger" />
@@ -83,12 +85,14 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({ patients, status
               />
             </View>
             <Divider style={{ marginTop: 10 }} />
-            <Text style={styles.recordMeta}>Last visit: Today • Records synced offline</Text>
+            <Text style={styles.recordMeta}>Synced with RuralCare network</Text>
           </Card>
         ))}
-        {!filtered.length && (
-          <Text style={styles.empty}>No patients found</Text>
-        )}
+        {patients.length === 0 ? (
+          <Text style={styles.empty}>No patients registered yet. Patients who book appointments will appear here.</Text>
+        ) : !filtered.length ? (
+          <Text style={styles.empty}>No patients found matching your search</Text>
+        ) : null}
       </ScrollView>
     </View>
   );

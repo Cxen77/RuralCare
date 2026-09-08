@@ -43,8 +43,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   onLocationConfirmed,
   onOpenMap,
 }) => {
-  if (!visible) return null;
-
+  // All hooks MUST be declared before any conditional returns (Rules of Hooks)
   const [latitude, setLatitude] = useState<number>(initialLocation?.latitude || DEFAULT_LOCATION.latitude);
   const [longitude, setLongitude] = useState<number>(initialLocation?.longitude || DEFAULT_LOCATION.longitude);
   const [address, setAddress] = useState<string>(initialLocation?.address || DEFAULT_LOCATION.address);
@@ -58,10 +57,23 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   const isInitializedRef = useRef(false);
   const gpsSelectionInProgressRef = useRef(false);
   const locationRequestIdRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const timerRef = useRef<NodeJS.Timeout>();
 
-  // useEffect moved below handleUseMyLocation
-
-  const timerRef = React.useRef<NodeJS.Timeout>();
+  const handleRegionWillChange = useCallback(() => {
+    // Cancel debounce timer immediately when user begins moving map
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = undefined;
+    }
+    // Abort in-flight reverse-geocode request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    locationRequestIdRef.current++;
+    setResolvingAddress(false);
+  }, []);
 
   const debouncedHandleLocationChange = useCallback(
     (newLat: number, newLng: number) => {
@@ -72,79 +84,134 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       setLatitude(newLat);
       setLongitude(newLng);
 
-      const requestId = ++locationRequestIdRef.current;
-      clearTimeout(timerRef.current);
+      // Cancel previous debounce timer and abort previous network call
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = undefined;
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
 
+      const requestId = ++locationRequestIdRef.current;
+
+      // Debounce reverse-geocode: executes only after map movement has stopped
       timerRef.current = setTimeout(async () => {
+        if (requestId !== locationRequestIdRef.current) return;
+
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
         setResolvingAddress(true);
+
         try {
-          const addr = await reverseGeocode(newLat, newLng);
-          if (requestId === locationRequestIdRef.current) {
+          const addr = await reverseGeocode(newLat, newLng, controller.signal);
+          if (requestId === locationRequestIdRef.current && !controller.signal.aborted) {
             console.log('[LOCATION] ADDRESS RESULT', addr);
             setAddress(addr);
           }
         } catch {
-          if (requestId === locationRequestIdRef.current) {
+          if (requestId === locationRequestIdRef.current && !controller.signal.aborted) {
             setAddress(`Lat: ${newLat.toFixed(4)}, Lon: ${newLng.toFixed(4)}`);
           }
         } finally {
           if (requestId === locationRequestIdRef.current) {
             setResolvingAddress(false);
+            if (abortControllerRef.current === controller) {
+              abortControllerRef.current = null;
+            }
           }
         }
-      }, 500);
+      }, 750);
     },
     []
   );
 
-  const handleUseMyLocation = async () => {
+  const handleUseMyLocation = useCallback(async () => {
     if (loadingGps) return; // Prevent duplicate requests
     setLoadingGps(true);
     setPermissionNotice(null);
 
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = undefined;
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
     const requestId = ++locationRequestIdRef.current;
     gpsSelectionInProgressRef.current = true;
 
-    try {
-      const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setPermissionNotice('Location permission is off. You can still choose your location manually.');
-        setLoadingGps(false);
-        gpsSelectionInProgressRef.current = false;
-        return;
-      }
+    const resolveAndFinish = async (curLat: number, curLng: number) => {
+      setLatitude(curLat);
+      setLongitude(curLng);
+      setFocusNonce(prev => prev + 1);
+      setResolvingAddress(true);
 
-      let currentLocation = await ExpoLocation.getCurrentPositionAsync({
-        accuracy: ExpoLocation.Accuracy.Balanced,
-      }).catch(() => null);
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
-      if (!currentLocation) {
-        currentLocation = await ExpoLocation.getLastKnownPositionAsync().catch(() => null);
-      }
-
-      if (currentLocation?.coords) {
-        const { latitude: curLat, longitude: curLng } = currentLocation.coords;
-        console.log('[LOCATION] GPS RESULT', { curLat, curLng });
-
-        // Update selectedLocation exactly once
-        setLatitude(curLat);
-        setLongitude(curLng);
-        
-        // Move MapLibre camera exactly once
-        setFocusNonce(prev => prev + 1);
-
-        setResolvingAddress(true);
-        const resolvedAddr = await reverseGeocode(curLat, curLng);
-        
-        if (requestId === locationRequestIdRef.current) {
-          console.log('[LOCATION] GPS ADDRESS RESULT', resolvedAddr);
+      try {
+        const resolvedAddr = await reverseGeocode(curLat, curLng, controller.signal);
+        if (requestId === locationRequestIdRef.current && !controller.signal.aborted) {
           setAddress(resolvedAddr);
           setResolvingAddress(false);
         }
-        
-        setLoadingGps(false);
-        gpsSelectionInProgressRef.current = false;
-        return;
+      } catch {
+        if (requestId === locationRequestIdRef.current && !controller.signal.aborted) {
+          setAddress(`Lat: ${curLat.toFixed(4)}, Lon: ${curLng.toFixed(4)}`);
+          setResolvingAddress(false);
+        }
+      }
+      setLoadingGps(false);
+      gpsSelectionInProgressRef.current = false;
+    };
+
+    try {
+      // 1. Browser Geolocation API on Web (instant & native browser permission prompt)
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.geolocation) {
+        return new Promise<void>((resolve) => {
+          navigator.geolocation.getCurrentPosition(
+            async (position) => {
+              await resolveAndFinish(position.coords.latitude, position.coords.longitude);
+              resolve();
+            },
+            (geoErr) => {
+              console.log('[GPS web error]:', geoErr?.message);
+              setPermissionNotice('Location permission denied or unavailable. You can drag the map to set location.');
+              setLoadingGps(false);
+              gpsSelectionInProgressRef.current = false;
+              resolve();
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+          );
+        });
+      }
+
+      // 2. Native expo-location for iOS / Android
+      if (ExpoLocation && ExpoLocation.requestForegroundPermissionsAsync) {
+        const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setPermissionNotice('Location permission is off. You can still choose your location manually.');
+          setLoadingGps(false);
+          gpsSelectionInProgressRef.current = false;
+          return;
+        }
+
+        let currentLocation = await ExpoLocation.getCurrentPositionAsync({
+          accuracy: ExpoLocation.Accuracy.Balanced,
+        }).catch(() => null);
+
+        if (!currentLocation) {
+          currentLocation = await ExpoLocation.getLastKnownPositionAsync().catch(() => null);
+        }
+
+        if (currentLocation?.coords) {
+          await resolveAndFinish(currentLocation.coords.latitude, currentLocation.coords.longitude);
+          return;
+        }
       }
 
       setPermissionNotice('Could not get GPS signal. Please try again or choose manually.');
@@ -156,19 +223,29 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
         gpsSelectionInProgressRef.current = false;
       }
     }
-  };
+  }, [loadingGps]);
 
   useEffect(() => {
     if (visible) {
       if (!isInitializedRef.current) {
-        const hasValidLocation = initialLocation?.latitude && initialLocation.latitude !== 0;
-        const lat = hasValidLocation ? initialLocation.latitude : DEFAULT_LOCATION.latitude;
-        const lng = hasValidLocation ? initialLocation.longitude : DEFAULT_LOCATION.longitude;
+        const hasValidLocation =
+          initialLocation?.latitude != null &&
+          !isNaN(initialLocation.latitude) &&
+          initialLocation.latitude !== 0 &&
+          initialLocation?.longitude != null &&
+          !isNaN(initialLocation.longitude) &&
+          initialLocation.longitude !== 0;
+
+        const lat = hasValidLocation ? initialLocation!.latitude! : DEFAULT_LOCATION.latitude;
+        const lng = hasValidLocation ? initialLocation!.longitude! : DEFAULT_LOCATION.longitude;
         
-        setLatitude(lat as number);
-        setLongitude(lng as number);
+        setLatitude(lat);
+        setLongitude(lng);
         setAddress(initialLocation?.address || DEFAULT_LOCATION.address);
         setPermissionNotice(null);
+        if (hasValidLocation) {
+          setFocusNonce(prev => prev + 1);
+        }
         isInitializedRef.current = true;
         
         if (!hasValidLocation) {
@@ -180,9 +257,17 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       isInitializedRef.current = false; // Reset when closed
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, initialLocation]);
+  }, [visible, initialLocation?.latitude, initialLocation?.longitude, initialLocation?.address]);
 
-  const handleConfirm = () => {
+  const handleConfirm = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = undefined;
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
     onLocationConfirmed({
       latitude,
       longitude,
@@ -191,12 +276,20 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
     });
     isInitializedRef.current = false;
     onClose();
-  };
+  }, [latitude, longitude, address, onLocationConfirmed, onClose]);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = undefined;
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
     isInitializedRef.current = false;
     onClose();
-  };
+  }, [onClose]);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
@@ -228,6 +321,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
               longitude={longitude}
               zoom={16}
               draggableMarker
+              onRegionWillChange={handleRegionWillChange}
               onLocationSelected={debouncedHandleLocationChange}
               focusNonce={focusNonce}
               height={280}

@@ -139,6 +139,8 @@ export interface PrescriptionItem {
   quantity: number;
 }
 
+export type DispensingStatus = 'pending' | 'sent_to_pharmacy' | 'confirmed' | 'preparing' | 'ready_for_pickup' | 'partial' | 'dispensed' | 'cancelled';
+
 export interface Prescription {
   id: string;
   consultationId: string;
@@ -151,8 +153,9 @@ export interface Prescription {
   qrCode: string; // unique QR verification code
   issuedAt: string;
   validUntil: string;
-  dispensingStatus: 'pending' | 'partial' | 'dispensed';
+  dispensingStatus: DispensingStatus;
   pharmacyId?: string;
+  pharmacyName?: string;
   reservationToken?: string;
 }
 
@@ -173,6 +176,8 @@ export interface Pharmacy {
   id: string;
   name: string;
   address: string;
+  latitude?: number;
+  longitude?: number;
   distanceKm: number;
   phone: string;
   isJanAushadhi: boolean;

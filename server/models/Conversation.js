@@ -12,6 +12,7 @@ const MessageSchema = new mongoose.Schema({
 const ConversationSchema = new mongoose.Schema({
   conversationId: { type: String, required: true, unique: true, index: true },
   patientId: { type: String, index: true },
+  title: { type: String },
   messages: [MessageSchema],
   context: {
     specialty: { type: String },

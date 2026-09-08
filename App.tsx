@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
@@ -17,6 +17,10 @@ import { EmergencySosModal } from './components/EmergencySosModal';
 import { BookingModal } from './components/BookingModal';
 import { PrescriptionQrModal } from './components/PrescriptionQrModal';
 import { LoadingOverlay } from './components/ui';
+import { getCallingEngine, IncomingCallInfo, CallType } from './services/communication/WebRTCCallingEngine';
+import { session } from './services/apiClient';
+import { IncomingCallModal } from './components/communication/IncomingCallModal';
+import { CallModal } from './components/communication/CallModal';
 
 // Patient screens
 import { PatientLoginScreen } from './screens/patient/PatientLoginScreen';
@@ -42,6 +46,63 @@ function AppContent() {
   const [qrVisible, setQrVisible] = useState(false);
   const [qrDetails, setQrDetails] = useState({ medName: '', rxCode: '' });
   const [mapFocusDoctorId, setMapFocusDoctorId] = useState<string | null>(null);
+
+  // Global 1-to-1 Calling State
+  const [incomingCall, setIncomingCall] = useState<IncomingCallInfo | null>(null);
+  const [activeCallSession, setActiveCallSession] = useState<{
+    peerName: string;
+    appointmentId: string;
+    callType: CallType;
+  } | null>(null);
+
+  const { token } = useAuth();
+
+  useEffect(() => {
+    const engine = getCallingEngine();
+    const effectiveToken = token || session.getToken();
+    if (effectiveToken) {
+      engine.connect(effectiveToken);
+    }
+
+    const unsubs = [
+      engine.on('incoming', (info: IncomingCallInfo) => {
+        setIncomingCall(info);
+      }),
+      engine.on('ended', () => {
+        setIncomingCall(null);
+        setActiveCallSession(null);
+      }),
+      engine.on('declined', () => {
+        setIncomingCall(null);
+      }),
+      engine.on('missed', () => {
+        setIncomingCall(null);
+      }),
+    ];
+
+    return () => {
+      unsubs.forEach(u => u());
+    };
+  }, [token]);
+
+  const handleAcceptIncomingCall = () => {
+    if (!incomingCall) return;
+    const engine = getCallingEngine();
+    engine.acceptCall(incomingCall.callId);
+    setActiveCallSession({
+      peerName: incomingCall.callerName,
+      appointmentId: incomingCall.appointmentId,
+      callType: incomingCall.callType,
+    });
+    setIncomingCall(null);
+  };
+
+  const handleDeclineIncomingCall = () => {
+    if (!incomingCall) return;
+    const engine = getCallingEngine();
+    engine.declineCall(incomingCall.callId);
+    setIncomingCall(null);
+  };
 
   const handleOpenBooking = (
     id: string,
@@ -133,6 +194,23 @@ function AppContent() {
         rxCode={qrDetails.rxCode}
         onClose={() => setQrVisible(false)}
       />
+
+      {/* Global 1-to-1 Calling Modals */}
+      <IncomingCallModal
+        visible={!!incomingCall}
+        callInfo={incomingCall}
+        onAccept={handleAcceptIncomingCall}
+        onDecline={handleDeclineIncomingCall}
+      />
+      {activeCallSession && (
+        <CallModal
+          visible={!!activeCallSession}
+          onClose={() => setActiveCallSession(null)}
+          peerName={activeCallSession.peerName}
+          appointmentId={activeCallSession.appointmentId}
+          callType={activeCallSession.callType}
+        />
+      )}
     </View>
   );
 }

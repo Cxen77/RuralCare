@@ -33,8 +33,6 @@ const T_CREATED = '2026-08-25T09:15:00.000Z';
 
 const patients = [
   { id: 'p1', name: 'Rajesh Kumar', age: 42, gender: 'Male', abhaId: '91-4829-1029-4821', phone: '+91-9431-111111', address: 'Ward 3, Near Panchayat Bhavan', village: 'Ramnagar', district: 'Vaishali', state: 'Bihar', primaryPHC: 'Ramnagar PHC', bloodGroup: 'B+', ayushmanEligible: true, latitude: 25.9892, longitude: 85.2345 },
-  { id: 'p2', name: 'Sunita Devi', age: 35, gender: 'Female', abhaId: '91-4829-1029-4822', phone: '+91-9431-222222', address: 'Ward 5', village: 'Ramnagar', district: 'Vaishali', state: 'Bihar', primaryPHC: 'Ramnagar PHC', bloodGroup: 'O+', ayushmanEligible: true, latitude: 25.9910, longitude: 85.2380 },
-  { id: 'p4', name: 'Phoolmati Rai', age: 58, gender: 'Female', abhaId: '91-4829-1029-4824', phone: '+91-9431-444444', address: 'Ward 1', village: 'Hajipur', district: 'Vaishali', state: 'Bihar', primaryPHC: 'Ramnagar PHC', bloodGroup: 'A+', ayushmanEligible: true, latitude: 25.6858, longitude: 85.2146 },
 ];
 
 const doctors = [
@@ -66,28 +64,11 @@ const hospitals = [
   },
 ];
 
-const appointments = [
-  { id: 'appt-101', patientId: 'p1', doctorId: 'd1', date: 'Today (Aug 25)', time: '02:00 PM', mode: 'in-person', chiefComplaint: 'Stomach pain & mild fever (2 days)', aiTriageSummary: 'Acute abdominal pain, fever 100.2F, nausea', aiSymptoms: ['abdominal pain', 'fever', 'nausea'], urgency: 'medium', status: 'completed', createdAt: T_CREATED },
-  { id: 'appt-102', patientId: 'p2', doctorId: 'd1', date: 'Today (Aug 25)', time: '02:30 PM', mode: 'teleconsultation', chiefComplaint: 'Persistent cough, weakness', aiTriageSummary: 'Low-grade fever, 8-day cough', aiSymptoms: ['cough', 'weakness'], urgency: 'routine', status: 'confirmed', createdAt: T_CREATED },
-  { id: 'appt-103', patientId: 'p4', doctorId: 'd1', date: 'Today (Aug 25)', time: '11:00 AM', mode: 'in-person', chiefComplaint: 'Knee pain', aiTriageSummary: 'Chronic knee pain, no red flags', aiSymptoms: ['knee pain'], urgency: 'routine', status: 'completed', createdAt: T_CREATED },
-];
-
-const consultations = [
-  { id: 'c1', appointmentId: 'appt-103', patientId: 'p4', doctorId: 'd1', clinicalNotes: 'Osteoarthritis of both knees. Advised analgesia and physiotherapy.', provisionalDiagnosis: 'Knee pain', prescriptionId: 'rx-201', status: 'completed', completedAt: T_ISSUED },
-  { id: 'c2', appointmentId: 'appt-101', patientId: 'p1', doctorId: 'd1', vitals: { bloodPressure: '140/90', heartRate: 96, temperature: 100.2, spO2: 97 }, clinicalNotes: 'Chest pain radiating to left arm. Borderline troponin. Needs cardiology workup.', provisionalDiagnosis: 'Suspected acute coronary syndrome', referralId: 'ref-501', status: 'completed', completedAt: T_ISSUED },
-];
-
-const prescriptions = [
-  { id: 'rx-201', consultationId: 'c1', patientId: 'p4', patientName: 'Phoolmati Rai', doctorId: 'd1', doctorName: 'Dr. Anita Sharma', items: [{ id: 'it-1', drugName: 'Paracetamol 650mg', genericName: 'Paracetamol', dosage: '650mg', form: 'tablet', frequency: 'Twice daily', duration: '5 days', quantity: 10 }], diagnosis: 'Knee pain', qrCode: 'RX-882190', issuedAt: T_ISSUED, dispensingStatus: 'pending', pharmacyId: 'ph1' },
-];
-
-const pharmacyRequests = [
-  { id: 'phreq-901', prescriptionId: 'rx-201', prescriptionCode: 'RX-882190', pharmacyId: 'ph1', patientId: 'p4', patientName: 'Phoolmati Rai', doctorName: 'Dr. Anita Sharma', medicines: ['Paracetamol 650mg'], status: 'pending' },
-];
-
-const referrals = [
-  { id: 'ref-501', patientId: 'p1', doctorId: 'd1', hospitalId: 'hosp-601', consultationId: 'c2', reason: 'Chest pain', requiredCapabilities: ['ECG', 'Echo'], patientName: 'Rajesh Kumar', referringDoctor: 'Dr. Anita Sharma', specialty: 'Cardiology', beds: 'ICU', diagnostics: ['ECG', 'Echo'], hospitalName: 'Ramnagar Community Health Center', urgency: 'high', notes: 'Chest pain, troponins borderline', status: 'pending', createdAt: T_CREATED },
-];
+const appointments = [];
+const consultations = [];
+const prescriptions = [];
+const pharmacyRequests = [];
+const referrals = [];
 
 // ids match the pharmacy portal's local catalog so its rows reconcile with the server
 const inventory = [
@@ -214,12 +195,12 @@ async function reconcile() {
   }
 
   const ph1 = await Pharmacy.findOne({ id: 'ph1' });
-  if (ph1 && ph1.name !== 'Jan Aushadhi Kendra Ramnagar') {
+  if (ph1 && (ph1.name !== 'Jan Aushadhi Kendra Ramnagar' || !ph1.latitude || !ph1.longitude)) {
     await Pharmacy.updateOne(
       { id: 'ph1' },
-      { $set: { name: 'Jan Aushadhi Kendra Ramnagar' } }
+      { $set: { name: 'Jan Aushadhi Kendra Ramnagar', latitude: 25.9870, longitude: 85.2290 } }
     );
-    fixes.push('ph1: verified Jan Aushadhi Kendra Ramnagar name');
+    fixes.push('ph1: verified Jan Aushadhi Kendra Ramnagar name and coordinates');
   }
 
   const hosp601 = await Hospital.findOne({ id: 'hosp-601' });

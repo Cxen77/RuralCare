@@ -3,6 +3,8 @@ const { ok } = require('../utils/response');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { AIService } = require('../services/ai.service');
+const Conversation = require('../models/Conversation');
+const { requireAuth, optionalAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -30,8 +32,9 @@ function handleAiError(err) {
  */
 router.post(
   '/chat',
+  optionalAuth,
   asyncHandler(async (req, res) => {
-    const { message, conversationId, location, history = [] } = req.body || {};
+    const { message, conversationId, location, history = [], patientId } = req.body || {};
 
     if (!message || typeof message !== 'string' || !message.trim()) {
       throw new ApiError(400, 'INVALID_INPUT', 'Field "message" (non-empty string) is required.');
@@ -42,11 +45,12 @@ router.post(
     }
 
     try {
+      const user = req.user || (patientId ? { patientId } : null);
       const result = await AIService.chatTurn({
         message: message.trim(),
         conversationId,
         location,
-        user: req.user || null,
+        user,
         history
       });
 
@@ -64,8 +68,9 @@ router.post(
  */
 router.post(
   '/triage',
+  optionalAuth,
   asyncHandler(async (req, res) => {
-    const { userInput, history = [], location } = req.body || {};
+    const { userInput, history = [], location, patientId } = req.body || {};
     const text = userInput || req.body?.message;
 
     if (!text || typeof text !== 'string' || !text.trim()) {
@@ -73,11 +78,12 @@ router.post(
     }
 
     try {
+      const user = req.user || (patientId ? { patientId } : null);
       const result = await AIService.chatTurn({
         message: text.trim(),
         history,
         location,
-        user: req.user || null
+        user
       });
 
       // Provide both new structure and legacy triage fields
@@ -92,6 +98,86 @@ router.post(
       console.error('[AI TRIAGE ERROR]', err.message);
       throw handleAiError(err);
     }
+  })
+);
+
+// ── AI Conversation History ────────────────────────────────────────────
+
+/**
+ * GET /api/ai/conversations
+ * List past AI conversations for the authenticated patient.
+ */
+router.get(
+  '/conversations',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const patientId = req.user.patientId || req.user.sub;
+    if (!patientId) {
+      throw new ApiError(400, 'MISSING_PATIENT_ID', 'Cannot determine patient identity from token.');
+    }
+
+    const conversations = await Conversation.find({ patientId })
+      .sort({ lastActive: -1 })
+      .select('conversationId title messages lastActive createdAt')
+      .lean();
+
+    const list = conversations.map(c => ({
+      conversationId: c.conversationId,
+      title: c.title || 'Untitled Conversation',
+      messageCount: (c.messages || []).length,
+      lastActive: c.lastActive,
+      createdAt: c.createdAt,
+    }));
+
+    return ok(res, list);
+  })
+);
+
+/**
+ * GET /api/ai/conversations/:id
+ * Get a single conversation with full messages. Ownership enforced.
+ */
+router.get(
+  '/conversations/:id',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const patientId = req.user.patientId || req.user.sub;
+    const conv = await Conversation.findOne({ conversationId: req.params.id }).lean();
+    if (!conv) {
+      throw new ApiError(404, 'NOT_FOUND', 'Conversation not found.');
+    }
+    if (conv.patientId !== patientId) {
+      throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this conversation.');
+    }
+    return ok(res, {
+      conversationId: conv.conversationId,
+      title: conv.title || 'Untitled Conversation',
+      messages: conv.messages || [],
+      context: conv.context,
+      lastActive: conv.lastActive,
+      createdAt: conv.createdAt,
+    });
+  })
+);
+
+/**
+ * DELETE /api/ai/conversations/:id
+ * Delete a conversation. Ownership enforced.
+ */
+router.delete(
+  '/conversations/:id',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const patientId = req.user.patientId || req.user.sub;
+    const conv = await Conversation.findOne({ conversationId: req.params.id });
+    if (!conv) {
+      throw new ApiError(404, 'NOT_FOUND', 'Conversation not found.');
+    }
+    if (conv.patientId !== patientId) {
+      throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this conversation.');
+    }
+    await conv.deleteOne();
+    return ok(res, { deleted: true });
   })
 );
 

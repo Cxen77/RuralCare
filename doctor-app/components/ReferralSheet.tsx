@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { Colors, Radii, Spacing } from '../constants/theme';
-import { Patient, Referral, Urgency } from '../data/mock';
+import { Patient, Referral, Urgency } from '../types';
 import { Avatar, BottomSheet, Button, CheckboxGroup, Chip, Divider, IconButton, Input } from './ui';
 
 interface ReferralSheetProps {

@@ -9,6 +9,7 @@ const { requireRole } = require('../middleware/rbac');
 const { assertTransition } = require('../utils/transitions');
 const { writeAudit } = require('../utils/audit');
 
+const Patient = require('../models/Patient');
 const router = express.Router();
 
 function medicineNames(items) {
@@ -24,8 +25,29 @@ router.get(
     if (doctorId) filter.doctorId = doctorId;
     if (pharmacyId) filter.pharmacyId = pharmacyId;
     if (dispensingStatus) filter.dispensingStatus = dispensingStatus;
-    const rows = await Prescription.find(filter).sort({ createdAt: -1 });
-    return ok(res, rows);
+    const rows = await Prescription.find(filter).sort({ createdAt: -1 }).lean();
+
+    const patientIds = rows.map((r) => r.patientId).filter(Boolean);
+    const patients = await Patient.find({ id: { $in: patientIds } }).lean();
+    const patMap = new Map(patients.map((p) => [p.id, p]));
+
+    const enriched = rows.map((rx) => {
+      const pat = patMap.get(rx.patientId);
+      const hasCoords = pat && typeof pat.latitude === 'number' && !isNaN(pat.latitude) && !(pat.latitude === 0 && pat.longitude === 0);
+      return {
+        ...rx,
+        patientLocation: pat ? {
+          address: pat.address || '',
+          village: pat.village || '',
+          district: pat.district || '',
+          latitude: hasCoords ? pat.latitude : null,
+          longitude: hasCoords ? pat.longitude : null,
+          hasCoordinates: !!hasCoords,
+        } : null,
+      };
+    });
+
+    return ok(res, enriched);
   })
 );
 
@@ -70,6 +92,7 @@ router.post(
         patientName: rx.patientName,
         doctorName: rx.doctorName,
         medicines: medicineNames(rx.items),
+        items: rx.items || [],
         status: 'pending',
       });
     }

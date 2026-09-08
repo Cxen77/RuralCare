@@ -19,21 +19,8 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Radii, Shadows, Spacing } from '../constants/theme';
 import { Button, Chip } from './ui';
-
-export interface DoctorProfileData {
-  name: string;
-  degrees: string;
-  specialty?: string;
-  facility: string;
-  clinicAddress?: string;
-  hprId: string;
-  phone?: string;
-  languages: string[];
-  consultationFee?: number;
-  maxPatientsPerDay?: number;
-  ayushmanPaneled?: boolean;
-  teleconsultation?: boolean;
-}
+import { DoctorProfileData } from '../types';
+export type { DoctorProfileData };
 
 interface Props {
   visible: boolean;

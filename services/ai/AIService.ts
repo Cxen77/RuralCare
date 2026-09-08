@@ -32,13 +32,13 @@ export interface AIProvider {
  * Online Cloud AI Provider (Calls RuralCare Backend)
  */
 export class OnlineAIProvider implements AIProvider {
-  async processInput(userInput: string, history: { sender: string; text: string }[], location?: { latitude: number; longitude: number }): Promise<any> {
+  async processInput(userInput: string, history: { sender: string; text: string }[], location?: { latitude: number; longitude: number }, conversationId?: string): Promise<any> {
     const startTime = Date.now();
     const targetUrl = `${apiClient.getActiveBaseUrl?.() || 'https://ruralcare-sia2.onrender.com'}/api/ai/chat`;
     console.log(`[AI DEBUG] mode=online url=${targetUrl} requestStarted=${new Date(startTime).toISOString()}`);
 
     try {
-      const res = await apiClient.aiChat({ message: userInput, history, location });
+      const res = await apiClient.aiChat({ message: userInput, history, location, conversationId });
       const duration = Date.now() - startTime;
       console.log(`[AI DEBUG] mode=online url=${targetUrl} responseStatus=200 responseTime=${duration}ms responseBodyKeys=${Object.keys(res || {}).join(',')}`);
       return {
@@ -51,7 +51,8 @@ export class OnlineAIProvider implements AIProvider {
         pharmacies: res.pharmacies,
         route: res.route,
         confirmationNeeded: res.confirmationNeeded,
-        intent: res.intent
+        intent: res.intent,
+        conversationId: res.conversationId,
       };
     } catch (err: any) {
       const duration = Date.now() - startTime;
@@ -88,7 +89,8 @@ export class AIService {
     userInput: string,
     history: { sender: string; text: string }[],
     targetMode: 'auto' | 'online' | 'offline' = 'auto',
-    location?: { latitude: number; longitude: number }
+    location?: { latitude: number; longitude: number },
+    conversationId?: string
   ): Promise<AIRouterResponse> {
     
     // 1. Process turn through deterministic TriageStateMachine
@@ -137,7 +139,7 @@ export class AIService {
         });
         try {
           const res = await Promise.race([
-             this.onlineProvider.processInput(userInput, history, location),
+             this.onlineProvider.processInput(userInput, history, location, conversationId),
              timeoutPromise
           ]);
           clearTimeout(timer);
@@ -179,6 +181,7 @@ export class AIService {
         ...triageResult.assessment,
         source: source as any,
       },
+      conversationId: onlineData?.conversationId || conversationId,
     };
   }
 }

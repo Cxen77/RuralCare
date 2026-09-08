@@ -10,7 +10,7 @@ export interface MapMarker {
   longitude: number;
   title?: string;
   subtitle?: string;
-  type?: 'patient' | 'doctor' | 'clinic' | 'hospital';
+  type?: 'patient' | 'doctor' | 'clinic' | 'hospital' | 'pharmacy';
 }
 
 export interface MapRoute {
@@ -29,6 +29,7 @@ export interface MapViewProps {
   route?: MapRoute | null;
   draggableMarker?: boolean;
   onLocationSelected?: (lat: number, lng: number) => void;
+  onRegionWillChange?: () => void;
   onMarkerPress?: (markerId: string) => void;
   interactive?: boolean;
   height?: any;
@@ -68,6 +69,15 @@ const PatientDot: React.FC = () => (
   </View>
 );
 
+const PharmacyPin: React.FC = () => (
+  <View style={markerStyles.pharmacyOuter}>
+    <View style={markerStyles.pharmacyCross}>
+      <View style={markerStyles.pharmacyCrossH} />
+      <View style={markerStyles.pharmacyCrossV} />
+    </View>
+  </View>
+);
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export const MapView: React.FC<MapViewProps> = ({
@@ -80,6 +90,7 @@ export const MapView: React.FC<MapViewProps> = ({
   route,
   draggableMarker = false,
   onLocationSelected,
+  onRegionWillChange,
   onMarkerPress,
   interactive = true,
   height = '100%',
@@ -140,6 +151,15 @@ export const MapView: React.FC<MapViewProps> = ({
   }, [route]);
 
   // ─── Handle region change for location picker (center-pin mode) ───────
+  const handleRegionWillChange = useCallback(
+    (feature: GeoJSON.Feature) => {
+      if (!draggableMarker || !onRegionWillChange) return;
+      if (!feature.properties?.isUserInteraction) return; // Ignore programmatic camera movements
+      onRegionWillChange();
+    },
+    [draggableMarker, onRegionWillChange]
+  );
+
   const handleRegionDidChange = useCallback(
     (feature: GeoJSON.Feature) => {
       if (!draggableMarker || !onLocationSelected) return;
@@ -166,6 +186,7 @@ export const MapView: React.FC<MapViewProps> = ({
         zoomEnabled={interactive}
         pitchEnabled={false}
         rotateEnabled={false}
+        onRegionWillChange={draggableMarker ? handleRegionWillChange : undefined}
         onRegionDidChange={draggableMarker ? handleRegionDidChange : undefined}
         onDidFinishLoadingStyle={() => console.log('[MapView] onDidFinishLoadingStyle')}
         onDidFinishLoadingMap={() => console.log('[MapView] onDidFinishLoadingMap')}
@@ -213,6 +234,27 @@ export const MapView: React.FC<MapViewProps> = ({
                 anchor={{ x: 0.5, y: 0.5 }}
               >
                 <PatientDot />
+              </MapLibreGL.MarkerView>
+            ))}
+
+        {/* Pharmacy marker */}
+        {!draggableMarker &&
+          markers
+            .filter(m => m.type === 'pharmacy')
+            .map(marker => (
+              <MapLibreGL.MarkerView
+                key={marker.id}
+                id={`marker-${marker.id}`}
+                coordinate={[marker.longitude, marker.latitude]}
+                anchor={{ x: 0.5, y: 0.5 }}
+              >
+                <View
+                  onStartShouldSetResponder={() => true}
+                  onResponderRelease={() => onMarkerPress?.(marker.id)}
+                  style={markerStyles.touchable}
+                >
+                  <PharmacyPin />
+                </View>
               </MapLibreGL.MarkerView>
             ))}
 
@@ -401,5 +443,45 @@ const markerStyles = StyleSheet.create({
         shadowRadius: 3,
       },
     }),
+  },
+  // Pharmacy pin
+  pharmacyOuter: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#059669',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      android: { elevation: 6 },
+      ios: {
+        shadowColor: '#059669',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.45,
+        shadowRadius: 6,
+      },
+    }),
+  },
+  pharmacyCross: {
+    width: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pharmacyCrossH: {
+    position: 'absolute',
+    width: 12,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#FFFFFF',
+  },
+  pharmacyCrossV: {
+    position: 'absolute',
+    width: 3,
+    height: 12,
+    borderRadius: 1.5,
+    backgroundColor: '#FFFFFF',
   },
 });

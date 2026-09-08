@@ -22,6 +22,10 @@ const appointmentTools = {
       required: ['doctorId']
     },
     execute: async (args) => {
+      const { doctorId, date = new Date().toISOString().split('T')[0] } = args || {};
+      if (!doctorId) {
+        return { available: false, message: 'doctorId is required.' };
+      }
       let doc = await Doctor.findOne({ $or: [{ id: doctorId }, { id: doctorId.replace('_', '') }] }).lean();
       if (!doc) {
         doc = await Doctor.findOne().lean();
@@ -31,7 +35,11 @@ const appointmentTools = {
       }
 
       // Check existing bookings for that date
-      const booked = await Appointment.find({ doctorId, date, status: { $ne: 'cancelled' } }).select('time').lean();
+      const booked = await Appointment.find({
+        $or: [{ doctorId: doc.id }, { doctorId }],
+        date,
+        status: { $ne: 'cancelled' }
+      }).select('time').lean();
       const bookedTimes = new Set(booked.map(b => b.time));
 
       // Standard clinical slots
@@ -97,6 +105,21 @@ const appointmentTools = {
             fee: doc.consultationFee || 0,
             chiefComplaint
           }
+        };
+      }
+
+      // ─── CHECK SLOT AVAILABILITY / CONFLICT ──────────────────────────
+      const existing = await Appointment.findOne({
+        $or: [{ doctorId: doc.id }, { doctorId }],
+        date,
+        time,
+        status: { $ne: 'cancelled' }
+      });
+      if (existing) {
+        return {
+          status: 'conflict',
+          success: false,
+          message: `The slot at ${time} on ${date} was just booked. Please choose another time.`
         };
       }
 

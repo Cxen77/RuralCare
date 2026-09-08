@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Modal,
   StyleSheet,
@@ -47,8 +47,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   onClose,
   onLocationConfirmed,
 }) => {
-  if (!visible) return null;
-
+  // All hooks MUST be declared before any conditional returns (Rules of Hooks)
   const defaultLat = initialLocation?.latitude && initialLocation.latitude !== 0 ? initialLocation.latitude : 25.9856;
   const defaultLng = initialLocation?.longitude && initialLocation.longitude !== 0 ? initialLocation.longitude : 85.2281;
 
@@ -58,104 +57,227 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   const [loadingGps, setLoadingGps] = useState(false);
   const [resolvingAddress, setResolvingAddress] = useState(false);
   const [permissionNotice, setPermissionNotice] = useState<string | null>(null);
+  const [focusNonce, setFocusNonce] = useState(0);
+
+  const timerRef = useRef<NodeJS.Timeout>();
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const locationRequestIdRef = useRef(0);
+  const gpsSelectionInProgressRef = useRef(false);
+  const isInitializedRef = useRef(false);
 
   useEffect(() => {
     if (visible) {
-      const lat = initialLocation?.latitude && initialLocation.latitude !== 0 ? initialLocation.latitude : 25.9856;
-      const lng = initialLocation?.longitude && initialLocation.longitude !== 0 ? initialLocation.longitude : 85.2281;
-      setLatitude(lat);
-      setLongitude(lng);
-      setAddress(initialLocation?.address || 'Main Road, Ramnagar, Vaishali, Bihar');
-      setPermissionNotice(null);
-    }
-  }, [visible, initialLocation]);
+      if (!isInitializedRef.current) {
+        const hasRealCoords =
+          initialLocation?.latitude != null &&
+          !isNaN(initialLocation.latitude) &&
+          initialLocation.latitude !== 0 &&
+          initialLocation?.longitude != null &&
+          !isNaN(initialLocation.longitude) &&
+          initialLocation.longitude !== 0 &&
+          !(Math.abs(initialLocation.latitude - 25.9856) < 0.0001 && Math.abs(initialLocation.longitude - 85.2281) < 0.0001);
 
-  const handleLocationChange = useCallback(async (newLat: number, newLng: number) => {
-    setLatitude(newLat);
-    setLongitude(newLng);
-    setResolvingAddress(true);
-    try {
-      const addr = await reverseGeocode(newLat, newLng);
-      setAddress(addr);
-    } catch {
-      setAddress(`Lat: ${newLat.toFixed(4)}, Lon: ${newLng.toFixed(4)}`);
-    } finally {
-      setResolvingAddress(false);
+        const lat = hasRealCoords ? (initialLocation!.latitude as number) : 25.9856;
+        const lng = hasRealCoords ? (initialLocation!.longitude as number) : 85.2281;
+        setLatitude(lat);
+        setLongitude(lng);
+        setAddress(initialLocation?.address || 'Main Road, Ramnagar, Vaishali, Bihar');
+        setPermissionNotice(null);
+        if (hasRealCoords) {
+          setFocusNonce(n => n + 1);
+        }
+        isInitializedRef.current = true;
+      }
+    } else {
+      isInitializedRef.current = false;
     }
+  }, [visible, initialLocation?.latitude, initialLocation?.longitude, initialLocation?.address]);
+
+  const handleRegionWillChange = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = undefined;
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    locationRequestIdRef.current++;
+    setResolvingAddress(false);
   }, []);
 
-  const handleUseMyLocation = async () => {
+  const handleLocationChange = useCallback((newLat: number, newLng: number) => {
+    // Ignore map dragging events if we are explicitly running GPS logic
+    if (gpsSelectionInProgressRef.current) return;
+
+    setLatitude(newLat);
+    setLongitude(newLng);
+
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = undefined;
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
+    const requestId = ++locationRequestIdRef.current;
+
+    timerRef.current = setTimeout(async () => {
+      if (requestId !== locationRequestIdRef.current) return;
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      setResolvingAddress(true);
+
+      try {
+        const addr = await reverseGeocode(newLat, newLng, controller.signal);
+        if (requestId === locationRequestIdRef.current && !controller.signal.aborted) {
+          setAddress(addr);
+        }
+      } catch {
+        if (requestId === locationRequestIdRef.current && !controller.signal.aborted) {
+          setAddress(`Lat: ${newLat.toFixed(4)}, Lon: ${newLng.toFixed(4)}`);
+        }
+      } finally {
+        if (requestId === locationRequestIdRef.current) {
+          setResolvingAddress(false);
+          if (abortControllerRef.current === controller) {
+            abortControllerRef.current = null;
+          }
+        }
+      }
+    }, 750);
+  }, []);
+
+  const handleUseMyLocation = useCallback(async () => {
+    if (loadingGps) return;
     setLoadingGps(true);
     setPermissionNotice(null);
 
-    try {
-      if (ExpoLocation && ExpoLocation.requestForegroundPermissionsAsync) {
-        const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          setPermissionNotice('Location permission is off. You can still choose your location manually.');
-          setLoadingGps(false);
-          return;
-        }
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = undefined;
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
 
-        const currentLocation = await ExpoLocation.getCurrentPositionAsync({
-          accuracy: ExpoLocation.Accuracy ? ExpoLocation.Accuracy.Balanced : 3,
-        });
+    const requestId = ++locationRequestIdRef.current;
+    gpsSelectionInProgressRef.current = true;
 
-        if (currentLocation?.coords) {
-          const { latitude: curLat, longitude: curLng } = currentLocation.coords;
-          setLatitude(curLat);
-          setLongitude(curLng);
-          setResolvingAddress(true);
-          const resolvedAddr = await reverseGeocode(curLat, curLng);
+    const resolveAndFinish = async (curLat: number, curLng: number) => {
+      setLatitude(curLat);
+      setLongitude(curLng);
+      setFocusNonce(prev => prev + 1);
+      setResolvingAddress(true);
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      try {
+        const resolvedAddr = await reverseGeocode(curLat, curLng, controller.signal);
+        if (requestId === locationRequestIdRef.current && !controller.signal.aborted) {
           setAddress(resolvedAddr);
           setResolvingAddress(false);
-          setLoadingGps(false);
-          return;
+        }
+      } catch {
+        if (requestId === locationRequestIdRef.current && !controller.signal.aborted) {
+          setAddress(`Lat: ${curLat.toFixed(4)}, Lon: ${curLng.toFixed(4)}`);
+          setResolvingAddress(false);
+        }
+      }
+      setLoadingGps(false);
+      gpsSelectionInProgressRef.current = false;
+    };
+
+    try {
+      // 1. Browser Geolocation API on Web (instant & native browser permission prompt)
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.geolocation) {
+        return new Promise<void>((resolve) => {
+          navigator.geolocation.getCurrentPosition(
+            async (position) => {
+              await resolveAndFinish(position.coords.latitude, position.coords.longitude);
+              resolve();
+            },
+            (geoErr) => {
+              console.log('[GPS web error]:', geoErr?.message);
+              setPermissionNotice('Location permission denied or unavailable. You can drag the map to set location.');
+              setLoadingGps(false);
+              gpsSelectionInProgressRef.current = false;
+              resolve();
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+          );
+        });
+      }
+
+      // 2. Native expo-location for iOS / Android
+      if (ExpoLocation && ExpoLocation.requestForegroundPermissionsAsync) {
+        try {
+          const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
+          if (status === 'granted') {
+            const currentLocation = await ExpoLocation.getCurrentPositionAsync({
+              accuracy: ExpoLocation.Accuracy ? ExpoLocation.Accuracy.Balanced : 3,
+            }).catch(() => null);
+
+            if (currentLocation?.coords) {
+              await resolveAndFinish(currentLocation.coords.latitude, currentLocation.coords.longitude);
+              return;
+            }
+          }
+        } catch (e) {
+          console.log('[GPS native error]:', e);
         }
       }
 
-      if (typeof navigator !== 'undefined' && navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          async (position) => {
-            const curLat = position.coords.latitude;
-            const curLng = position.coords.longitude;
-            setLatitude(curLat);
-            setLongitude(curLng);
-            setResolvingAddress(true);
-            const resolvedAddr = await reverseGeocode(curLat, curLng);
-            setAddress(resolvedAddr);
-            setResolvingAddress(false);
-            setLoadingGps(false);
-          },
-          () => {
-            setPermissionNotice('Location permission is off. You can still choose your location manually.');
-            setLoadingGps(false);
-          },
-          { enableHighAccuracy: false, timeout: 5000 }
-        );
-        return;
-      }
-
-      setPermissionNotice('Location permission is off. You can still choose your location manually.');
+      setPermissionNotice('Location permission is off. You can drag the pin manually.');
     } catch (err: any) {
-      setPermissionNotice('Location permission is off. You can still choose your location manually.');
+      setPermissionNotice('Failed to access location. Please check your device settings.');
     } finally {
-      setLoadingGps(false);
+      if (requestId === locationRequestIdRef.current) {
+        setLoadingGps(false);
+        gpsSelectionInProgressRef.current = false;
+      }
     }
-  };
+  }, [loadingGps]);
 
-  const handleConfirm = () => {
+  const handleConfirm = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = undefined;
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
     onLocationConfirmed({
       latitude,
       longitude,
       address,
       updatedAt: new Date().toISOString(),
     });
+    isInitializedRef.current = false;
     onClose();
-  };
+  }, [latitude, longitude, address, onLocationConfirmed, onClose]);
+
+  const handleClose = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = undefined;
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    isInitializedRef.current = false;
+    onClose();
+  }, [onClose]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <View style={styles.overlay}>
         <View style={styles.modalCard}>
           <View style={styles.header}>
@@ -168,7 +290,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
                 <Text style={styles.subtitle}>Drag pin or tap map to set your clinic location</Text>
               </View>
             </View>
-            <IconButton icon="close" size="sm" variant="plain" onPress={onClose} />
+            <IconButton icon="close" size="sm" variant="plain" onPress={handleClose} />
           </View>
 
           {permissionNotice && (
@@ -184,7 +306,9 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
               longitude={longitude}
               zoom={15}
               draggableMarker
+              onRegionWillChange={handleRegionWillChange}
               onLocationSelected={handleLocationChange}
+              focusNonce={focusNonce}
               height={260}
               borderRadius={Radii.lg}
             />

@@ -4,6 +4,7 @@ const Prescription = require('../models/Prescription');
 const Reservation = require('../models/Reservation');
 const Pharmacy = require('../models/Pharmacy');
 const InventoryItem = require('../models/InventoryItem');
+const Patient = require('../models/Patient');
 const { ok } = require('../utils/response');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
@@ -14,6 +15,35 @@ const { writeAudit } = require('../utils/audit');
 const { sendNotification } = require('../utils/notify');
 
 const router = express.Router();
+
+function isValidCoord(lat, lng) {
+  return (
+    typeof lat === 'number' &&
+    !isNaN(lat) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    typeof lng === 'number' &&
+    !isNaN(lng) &&
+    lng >= -180 &&
+    lng <= 180 &&
+    !(lat === 0 && lng === 0)
+  );
+}
+
+function calculateDistanceKm(lat1, lon1, lat2, lon2) {
+  if (!isValidCoord(lat1, lon1) || !isValidCoord(lat2, lon2)) return null;
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 10) / 10;
+}
 
 const AVAILABILITY_TO_STATUS = { full: 'dispensed', partial: 'partial' };
 
@@ -260,8 +290,14 @@ router.post(
       reservation = await Reservation.findOne({ reservationToken });
     }
 
-    if (!reservation && (qrCode || prescriptionId)) {
-      rx = await Prescription.findOne(qrCode ? { qrCode } : { id: prescriptionId });
+    if (!reservation && (qrCode || prescriptionId || reservationToken)) {
+      rx = await Prescription.findOne(
+        qrCode
+          ? { qrCode }
+          : prescriptionId
+          ? { id: prescriptionId }
+          : { reservationToken }
+      );
       if (rx) {
         reservation = await Reservation.findOne({ prescriptionId: rx.id, status: 'reserved' });
       }
@@ -391,8 +427,158 @@ router.get(
     const filter = {};
     if (pharmacyId) filter.pharmacyId = pharmacyId;
     if (req.query.status) filter.status = req.query.status;
-    const rows = await PharmacyRequest.find(filter).sort({ createdAt: -1 });
-    return ok(res, rows);
+    const rows = await PharmacyRequest.find(filter).sort({ createdAt: -1 }).lean();
+
+    const prescriptionIds = rows.map((r) => r.prescriptionId).filter(Boolean);
+    const patientIds = rows.map((r) => r.patientId).filter(Boolean);
+
+    const [prescriptions, patients, pharmacy] = await Promise.all([
+      Prescription.find({ id: { $in: prescriptionIds } }).lean(),
+      Patient.find({ id: { $in: patientIds } }).lean(),
+      pharmacyId ? Pharmacy.findOne({ id: pharmacyId }).lean() : null,
+    ]);
+
+    const rxMap = new Map(prescriptions.map((p) => [p.id, p]));
+    const patMap = new Map(patients.map((p) => [p.id, p]));
+    const hasPhCoords = pharmacy ? isValidCoord(pharmacy.latitude, pharmacy.longitude) : false;
+
+    const enriched = rows.map((r) => {
+      const rx = rxMap.get(r.prescriptionId);
+      const pat = patMap.get(r.patientId);
+      const hasPatCoords = pat ? isValidCoord(pat.latitude, pat.longitude) : false;
+      const distanceKm =
+        hasPatCoords && hasPhCoords
+          ? calculateDistanceKm(pat.latitude, pat.longitude, pharmacy.latitude, pharmacy.longitude)
+          : null;
+
+      const items = (Array.isArray(r.items) && r.items.length > 0)
+        ? r.items
+        : (Array.isArray(rx?.items) && rx.items.length > 0)
+        ? rx.items
+        : (Array.isArray(r.medicines) && r.medicines.length > 0)
+        ? r.medicines.map((m) => ({
+            drugName: typeof m === 'string' ? m : (m.medicine || m.drugName || 'Prescribed Medicine'),
+            genericName: '',
+            dosage: '1 tab',
+            form: 'Tablet',
+            frequency: 'OD',
+            duration: '5 days',
+            quantity: 10,
+          }))
+        : [];
+
+      return {
+        ...r,
+        items,
+        diagnosis: rx?.diagnosis || r.diagnosis || '',
+        doctorName: r.doctorName || rx?.doctorName || 'Prescribing Doctor',
+        patientName: r.patientName || rx?.patientName || 'Patient',
+        patientLocation: pat ? {
+          address: pat.address || '',
+          village: pat.village || '',
+          district: pat.district || '',
+          state: pat.state || '',
+          latitude: hasPatCoords ? pat.latitude : null,
+          longitude: hasPatCoords ? pat.longitude : null,
+          hasCoordinates: hasPatCoords,
+        } : null,
+        pharmacyLocation: pharmacy ? {
+          id: pharmacy.id,
+          name: pharmacy.name,
+          address: pharmacy.address,
+          latitude: hasPhCoords ? pharmacy.latitude : null,
+          longitude: hasPhCoords ? pharmacy.longitude : null,
+          hasCoordinates: hasPhCoords,
+        } : null,
+        distanceKm,
+      };
+    });
+
+    return ok(res, enriched);
+  })
+);
+
+// ─── GET /api/pharmacy/fulfillment-location/:id ───────────────────────────
+// Authorized endpoint for pharmacy staff to inspect accurate canonical coordinates
+router.get(
+  '/fulfillment-location/:id',
+  requireRole('PHARMACIST', 'ADMIN'),
+  asyncHandler(async (req, res) => {
+    const callerPharmacyId = req.user.role === 'PHARMACIST' ? req.user.pharmacyId : (req.query.pharmacyId || 'ph1');
+    const { id } = req.params;
+
+    // Support finding by requestId (phreq-) or prescriptionId (rx-)
+    let reqDoc = await PharmacyRequest.findOne({ id }).lean();
+    let rx = null;
+
+    if (reqDoc) {
+      rx = await Prescription.findOne({ id: reqDoc.prescriptionId }).lean();
+    } else {
+      rx = await Prescription.findOne({ id }).lean();
+      if (rx) {
+        reqDoc = await PharmacyRequest.findOne({ prescriptionId: rx.id, pharmacyId: callerPharmacyId }).lean();
+      }
+    }
+
+    if (!reqDoc && !rx) {
+      throw new ApiError(404, 'NOT_FOUND', 'Prescription or fulfillment request not found.');
+    }
+
+    // Security / Authorization check:
+    // Pharmacists can only view locations for orders belonging/broadcasted to their pharmacy
+    if (req.user.role === 'PHARMACIST') {
+      const isAssignedToPharmacy =
+        (reqDoc && reqDoc.pharmacyId === callerPharmacyId) ||
+        (rx && rx.pharmacyId === callerPharmacyId);
+
+      if (!isAssignedToPharmacy) {
+        throw new ApiError(403, 'FORBIDDEN', 'You are not authorized to view location for this order.');
+      }
+    }
+
+    const patientId = reqDoc?.patientId || rx?.patientId;
+    const targetPharmacyId = reqDoc?.pharmacyId || rx?.pharmacyId || callerPharmacyId;
+
+    const [pat, ph] = await Promise.all([
+      Patient.findOne({ id: patientId }).lean(),
+      Pharmacy.findOne({ id: targetPharmacyId }).lean(),
+    ]);
+
+    const hasPatientCoords = pat ? isValidCoord(pat.latitude, pat.longitude) : false;
+    const hasPharmacyCoords = ph ? isValidCoord(ph.latitude, ph.longitude) : false;
+    const distanceKm =
+      hasPatientCoords && hasPharmacyCoords
+        ? calculateDistanceKm(pat.latitude, pat.longitude, ph.latitude, ph.longitude)
+        : null;
+
+    return ok(res, {
+      requestId: reqDoc?.id || null,
+      prescriptionId: rx?.id || reqDoc?.prescriptionId,
+      prescriptionCode: rx?.qrCode || reqDoc?.prescriptionCode,
+      status: reqDoc?.status || rx?.dispensingStatus || 'pending',
+      patient: {
+        id: pat?.id || patientId,
+        name: pat?.name || reqDoc?.patientName || rx?.patientName || 'Patient',
+        address: pat?.address || 'Address not on record',
+        village: pat?.village || '',
+        district: pat?.district || '',
+        state: pat?.state || '',
+        latitude: hasPatientCoords ? pat.latitude : null,
+        longitude: hasPatientCoords ? pat.longitude : null,
+        hasCoordinates: hasPatientCoords,
+      },
+      pharmacy: {
+        id: ph?.id || targetPharmacyId,
+        name: ph?.name || 'Local Pharmacy',
+        address: ph?.address || 'Main Road, Ramnagar',
+        phone: ph?.phone || '',
+        latitude: hasPharmacyCoords ? ph.latitude : null,
+        longitude: hasPharmacyCoords ? ph.longitude : null,
+        hasCoordinates: hasPharmacyCoords,
+      },
+      distanceKm,
+      hasBothCoordinates: hasPatientCoords && hasPharmacyCoords,
+    });
   })
 );
 
@@ -403,6 +589,13 @@ router.post(
     const { prescriptionId, pharmacyId } = req.body;
     if (!prescriptionId) throw new ApiError(400, 'MISSING_PRESCRIPTION', 'prescriptionId is required.');
     if (!pharmacyId) throw new ApiError(400, 'MISSING_PHARMACY', 'pharmacyId is required.');
+
+    let items = req.body.items;
+    if (!items || items.length === 0) {
+      const rx = await Prescription.findOne({ id: prescriptionId }).lean();
+      if (rx) items = rx.items;
+    }
+
     const reqDoc = await PharmacyRequest.create({
       id: genId('phreq'),
       prescriptionId,
@@ -412,6 +605,7 @@ router.post(
       patientName: req.body.patientName,
       doctorName: req.body.doctorName || req.user.name,
       medicines: req.body.medicines || [],
+      items: items || [],
       status: 'pending',
     });
     return ok(res, reqDoc, 201);
@@ -454,6 +648,14 @@ router.post(
     let reservation = null;
     if (reserve && availability !== 'none') {
       const token = `RC-${Math.floor(1000 + Math.random() * 8999)}`;
+      const resvItems = (Array.isArray(items) && items.length > 0)
+        ? items.map((i) => ({
+            ...i,
+            drugName: i.drugName || i.medicine,
+            medicine: i.medicine || i.drugName,
+          }))
+        : (rx.items || []);
+
       reservation = await Reservation.create({
         id: genId('resv'),
         prescriptionId: rx.id,
@@ -462,7 +664,7 @@ router.post(
         patientName: rx.patientName,
         prescriptionCode: rx.qrCode,
         reservationToken: token,
-        items: items || rx.items,
+        items: resvItems,
         totalCost: totalCost || 0,
         status: 'reserved',
         reservedAt: new Date().toISOString(),
@@ -479,5 +681,398 @@ router.post(
     return ok(res, { request: reqDoc, prescription: rx, reservation });
   })
 );
+
+// ─── POST /api/pharmacy/send-to-stores ────────────────────────────────────
+// Doctor or patient broadcasts/routes the canonical prescription to local medical stores
+router.post(
+  '/send-to-stores',
+  requireRole('DOCTOR', 'PATIENT', 'ADMIN'),
+  asyncHandler(async (req, res) => {
+    const { prescriptionId, pharmacyIds } = req.body;
+    if (!prescriptionId) throw new ApiError(400, 'MISSING_PRESCRIPTION', 'prescriptionId is required.');
+
+    const rx = await Prescription.findOne({ id: prescriptionId });
+    if (!rx) throw new ApiError(404, 'NOT_FOUND', 'Prescription not found.');
+
+    // Determine target pharmacies
+    let targetPharmacies = [];
+    if (Array.isArray(pharmacyIds) && pharmacyIds.length > 0) {
+      targetPharmacies = await Pharmacy.find({ id: { $in: pharmacyIds } }).lean();
+    } else {
+      targetPharmacies = await Pharmacy.find().lean();
+    }
+
+    if (!targetPharmacies.length) {
+      throw new ApiError(404, 'NO_PHARMACIES', 'No medical stores found to receive prescription.');
+    }
+
+    const createdRequests = [];
+    for (const ph of targetPharmacies) {
+      let reqDoc = await PharmacyRequest.findOne({
+        prescriptionId: rx.id,
+        pharmacyId: ph.id,
+      });
+
+      if (!reqDoc) {
+        reqDoc = await PharmacyRequest.create({
+          id: genId('phreq'),
+          prescriptionId: rx.id,
+          prescriptionCode: rx.qrCode,
+          pharmacyId: ph.id,
+          pharmacyName: ph.name,
+          patientId: rx.patientId,
+          patientName: rx.patientName,
+          doctorName: rx.doctorName,
+          medicines: (rx.items || []).map((i) => i.drugName || i.medicine),
+          items: rx.items || [],
+          status: 'pending',
+        });
+      }
+      createdRequests.push(reqDoc);
+    }
+
+    // Advance status to sent_to_pharmacy if currently pending
+    if (rx.dispensingStatus === 'pending') {
+      assertTransition('prescription', rx.dispensingStatus, 'sent_to_pharmacy');
+      rx.dispensingStatus = 'sent_to_pharmacy';
+      await rx.save();
+
+      await writeAudit({
+        actorId: req.user.sub,
+        actorRole: req.user.role,
+        action: 'prescription.sendToStores',
+        entityType: 'prescription',
+        entityId: rx.id,
+        after: { dispensingStatus: 'sent_to_pharmacy', storesCount: targetPharmacies.length },
+      });
+
+      await sendNotification({
+        recipientId: rx.patientId,
+        role: 'PATIENT',
+        type: 'prescription',
+        title: 'Prescription Sent to Medical Stores',
+        message: `Your prescription (${rx.qrCode}) was sent to ${targetPharmacies.length} local medical store(s) for availability review.`,
+        relatedEntity: { type: 'prescription', id: rx.id },
+      });
+    }
+
+    return ok(res, {
+      success: true,
+      prescription: rx,
+      sentToStores: targetPharmacies.map((p) => ({ id: p.id, name: p.name, distanceKm: p.distanceKm })),
+      requests: createdRequests,
+    });
+  })
+);
+
+// ─── GET /api/pharmacy/inventory-check/:prescriptionId ────────────────────
+// Real pharmacy inventory cross-validation against prescription items
+router.get(
+  '/inventory-check/:prescriptionId',
+  requireRole('PHARMACIST', 'ADMIN'),
+  asyncHandler(async (req, res) => {
+    const pharmacyId = req.user.role === 'PHARMACIST' ? req.user.pharmacyId : (req.query.pharmacyId || 'ph1');
+    const rx = await Prescription.findOne({ id: req.params.prescriptionId }).lean();
+    if (!rx) throw new ApiError(404, 'NOT_FOUND', 'Prescription not found.');
+
+    const pharmacy = await Pharmacy.findOne({ id: pharmacyId }).lean();
+    const inventory = await InventoryItem.find({ pharmacyId }).lean();
+
+    const itemsCheck = (rx.items || []).map((item) => {
+      const neededQty = Number(item.quantity || 1);
+      const stock = inventory.find((inv) => matchesDrug(inv, item));
+      const inStock = stock ? Number(stock.quantity || 0) : 0;
+      const isAvailable = inStock >= neededQty;
+      const unitPrice = stock ? Number(stock.price || 0) : 0;
+
+      return {
+        id: item.id,
+        drugName: item.drugName,
+        genericName: item.genericName,
+        dosage: item.dosage,
+        form: item.form || 'Tablet',
+        frequency: item.frequency || 'OD',
+        duration: item.duration || '5 days',
+        requestedQuantity: neededQty,
+        inStockQuantity: inStock,
+        isAvailable,
+        unitPrice,
+        totalPrice: Math.round(unitPrice * neededQty * 100) / 100,
+        isJanAushadhi: !!stock?.isJanAushadhi,
+        inventoryItemId: stock?.id || null,
+      };
+    });
+
+    const allAvailable = itemsCheck.length > 0 && itemsCheck.every((i) => i.isAvailable);
+    const someAvailable = itemsCheck.some((i) => i.isAvailable);
+    const availability = allAvailable ? 'full' : someAvailable ? 'partial' : 'none';
+    const totalCost = itemsCheck.reduce((sum, i) => sum + (i.isAvailable ? i.totalPrice : 0), 0);
+
+    return ok(res, {
+      prescriptionId: rx.id,
+      prescriptionCode: rx.qrCode,
+      pharmacyId,
+      pharmacyName: pharmacy?.name || 'Local Pharmacy',
+      availability,
+      totalCost: Math.round(totalCost * 100) / 100,
+      itemsCheck,
+    });
+  })
+);
+
+// ─── POST /api/pharmacy/requests/:id/confirm ──────────────────────────────
+// Atomic claim & stock reservation by authenticated pharmacy
+router.post(
+  '/requests/:id/confirm',
+  requireRole('PHARMACIST', 'ADMIN'),
+  asyncHandler(async (req, res) => {
+    const pharmacyId = req.user.role === 'PHARMACIST' ? req.user.pharmacyId : req.body.pharmacyId;
+    if (!pharmacyId) throw new ApiError(400, 'MISSING_PHARMACY', 'pharmacyId is required.');
+
+    const reqDoc = await PharmacyRequest.findOne({ id: req.params.id });
+    if (!reqDoc) throw new ApiError(404, 'NOT_FOUND', 'Pharmacy request not found.');
+
+    const rx = await Prescription.findOne({ id: reqDoc.prescriptionId });
+    if (!rx) throw new ApiError(404, 'NOT_FOUND', 'Linked prescription not found.');
+
+    // Atomic double-claim prevention
+    if (
+      rx.pharmacyId &&
+      rx.pharmacyId !== pharmacyId &&
+      ['confirmed', 'preparing', 'ready_for_pickup', 'dispensed'].includes(rx.dispensingStatus)
+    ) {
+      throw new ApiError(
+        409,
+        'ALREADY_CLAIMED',
+        `This prescription has already been accepted by another pharmacy (${rx.pharmacyName || rx.pharmacyId}).`
+      );
+    }
+
+    const pharmacy = await Pharmacy.findOne({ id: pharmacyId }).lean();
+    const inventory = await InventoryItem.find({ pharmacyId }).lean();
+
+    // Verify inventory on server
+    const itemsCheck = (rx.items || []).map((item) => {
+      const neededQty = Number(item.quantity || 1);
+      const stock = inventory.find((inv) => matchesDrug(inv, item));
+      const inStock = stock ? Number(stock.quantity || 0) : 0;
+      return {
+        ...item,
+        drugName: item.drugName,
+        medicine: item.drugName,
+        requestedQuantity: neededQty,
+        inStockQuantity: inStock,
+        isAvailable: inStock >= neededQty,
+        unitPrice: stock ? Number(stock.price || 0) : 0,
+      };
+    });
+
+    const allAvailable = itemsCheck.length > 0 && itemsCheck.every((i) => i.isAvailable);
+    const someAvailable = itemsCheck.some((i) => i.isAvailable);
+    const availability = allAvailable ? 'full' : someAvailable ? 'partial' : 'none';
+
+    if (availability === 'none') {
+      throw new ApiError(400, 'OUT_OF_STOCK', 'None of the prescribed items are available in stock.');
+    }
+
+    const targetStatus = availability === 'full' ? 'confirmed' : 'partial';
+    assertTransition('prescription', rx.dispensingStatus, targetStatus);
+
+    const token = rx.reservationToken || `RC-${Math.floor(1000 + Math.random() * 8999)}`;
+    const totalCost = itemsCheck.reduce((s, i) => s + (i.isAvailable ? i.unitPrice * i.requestedQuantity : 0), 0);
+
+    // Atomic assign to this pharmacy
+    rx.pharmacyId = pharmacyId;
+    rx.pharmacyName = pharmacy?.name || 'Local Pharmacy';
+    rx.dispensingStatus = targetStatus;
+    rx.reservationToken = token;
+    await rx.save();
+
+    // Create/update reservation record
+    let reservation = await Reservation.findOne({ prescriptionId: rx.id, pharmacyId });
+    if (!reservation) {
+      reservation = await Reservation.create({
+        id: genId('resv'),
+        prescriptionId: rx.id,
+        pharmacyId,
+        patientId: rx.patientId,
+        patientName: rx.patientName,
+        prescriptionCode: rx.qrCode,
+        reservationToken: token,
+        items: itemsCheck.map((i) => ({
+          drugName: i.drugName,
+          medicine: i.drugName,
+          dosage: i.dosage,
+          form: i.form,
+          quantity: i.requestedQuantity,
+          pricePerUnit: i.unitPrice,
+        })),
+        totalCost: Math.round(totalCost * 100) / 100,
+        status: 'reserved',
+        reservedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 4 * 3600 * 1000).toISOString(),
+      });
+    }
+
+    reqDoc.availability = availability;
+    reqDoc.status = 'confirmed';
+    reqDoc.pharmacyName = pharmacy?.name || 'Local Pharmacy';
+    reqDoc.reservationToken = token;
+    reqDoc.respondedAt = new Date().toISOString();
+    await reqDoc.save();
+
+    // Decline pending requests for other pharmacies to prevent multiple claims
+    await PharmacyRequest.updateMany(
+      { prescriptionId: rx.id, pharmacyId: { $ne: pharmacyId }, status: 'pending' },
+      { $set: { status: 'cancelled' } }
+    );
+
+    // Send notification to patient
+    await sendNotification({
+      recipientId: rx.patientId,
+      role: 'PATIENT',
+      type: 'prescription',
+      title: 'Prescription Confirmed by Pharmacy',
+      message: `${pharmacy?.name || 'Pharmacy'} has confirmed your prescription. Token: ${token}.`,
+      relatedEntity: { type: 'prescription', id: rx.id },
+    });
+
+    return ok(res, {
+      request: reqDoc,
+      prescription: rx,
+      reservation,
+      token,
+      reservationToken: token,
+      pharmacyName: pharmacy?.name,
+    });
+  })
+);
+
+// ─── POST /api/pharmacy/requests/:id/status ───────────────────────────────
+// Update fulfillment state: PREPARING -> READY_FOR_PICKUP
+router.post(
+  '/requests/:id/status',
+  requireRole('PHARMACIST', 'ADMIN'),
+  asyncHandler(async (req, res) => {
+    const { status } = req.body;
+    const allowed = ['confirmed', 'preparing', 'ready_for_pickup', 'dispensed'];
+    if (!allowed.includes(status)) {
+      throw new ApiError(400, 'INVALID_STATUS', `Status must be one of: ${allowed.join(', ')}`);
+    }
+
+    const reqDoc = await PharmacyRequest.findOne({ id: req.params.id });
+    if (!reqDoc) throw new ApiError(404, 'NOT_FOUND', 'Pharmacy request not found.');
+
+    const rx = await Prescription.findOne({ id: reqDoc.prescriptionId });
+    if (!rx) throw new ApiError(404, 'NOT_FOUND', 'Prescription not found.');
+
+    const fromRx = rx.dispensingStatus;
+    assertTransition('prescription', fromRx, status);
+
+    rx.dispensingStatus = status;
+    await rx.save();
+
+    reqDoc.status = status;
+    await reqDoc.save();
+
+    // Sync reservation status
+    const resv = await Reservation.findOne({ prescriptionId: rx.id, pharmacyId: reqDoc.pharmacyId });
+    if (resv) {
+      if (status === 'ready_for_pickup') {
+        resv.status = 'ready_for_pickup';
+        await resv.save();
+      } else if (status === 'dispensed') {
+        resv.status = 'picked_up';
+        resv.dispensedAt = new Date().toISOString();
+        await resv.save();
+      }
+    }
+
+    if (status === 'ready_for_pickup') {
+      await sendNotification({
+        recipientId: rx.patientId,
+        role: 'PATIENT',
+        type: 'prescription',
+        title: 'Medicines Ready for Pickup!',
+        message: `Your prescription (${rx.qrCode}) is prepared and ready for pickup at ${reqDoc.pharmacyName || 'your pharmacy'}! Token: ${rx.reservationToken}.`,
+        relatedEntity: { type: 'prescription', id: rx.id },
+      });
+    }
+
+    return ok(res, {
+      request: reqDoc,
+      prescription: rx,
+      status,
+    });
+  })
+);
+
+router.get(
+  '/profile',
+  requireRole('PHARMACIST', 'ADMIN'),
+  asyncHandler(async (req, res) => {
+    const pharmacyId = req.user.pharmacyId || 'ph1';
+    const pharmacy = await Pharmacy.findOne({ id: pharmacyId });
+    if (!pharmacy) throw new ApiError(404, 'NOT_FOUND', 'Pharmacy not found.');
+
+    return ok(res, {
+      id: pharmacy.id,
+      name: pharmacy.name,
+      address: pharmacy.address,
+      latitude: pharmacy.latitude,
+      longitude: pharmacy.longitude,
+      phone: pharmacy.phone,
+      isJanAushadhi: pharmacy.isJanAushadhi,
+      operatingHours: pharmacy.operatingHours,
+      hasCoordinates: isValidCoord(pharmacy.latitude, pharmacy.longitude),
+      locationUpdatedAt: pharmacy.locationUpdatedAt,
+    });
+  })
+);
+
+const handlePharmacyLocationUpdate = asyncHandler(async (req, res) => {
+  const pharmacyId = req.user.pharmacyId || 'ph1';
+  const pharmacy = await Pharmacy.findOne({ id: pharmacyId });
+  if (!pharmacy) throw new ApiError(404, 'NOT_FOUND', 'Pharmacy not found.');
+
+  const { latitude, longitude, address } = req.body || {};
+  if (latitude !== undefined && longitude !== undefined) {
+    const numLat = Number(latitude);
+    const numLng = Number(longitude);
+    if (!isValidCoord(numLat, numLng)) {
+      throw new ApiError(400, 'INVALID_COORDINATES', 'Latitude must be between -90 and 90, longitude between -180 and 180.');
+    }
+    pharmacy.latitude = numLat;
+    pharmacy.longitude = numLng;
+    pharmacy.locationUpdatedAt = new Date();
+  }
+  if (address && typeof address === 'string') {
+    pharmacy.address = address.trim();
+  }
+  await pharmacy.save();
+
+  await writeAudit({
+    actorId: req.user.sub,
+    actorRole: req.user.role,
+    action: 'pharmacy.location_update',
+    entityType: 'pharmacy',
+    entityId: pharmacy.id,
+    before: {},
+    after: { address: pharmacy.address, latitude: pharmacy.latitude, longitude: pharmacy.longitude },
+  });
+
+  return ok(res, {
+    id: pharmacy.id,
+    name: pharmacy.name,
+    address: pharmacy.address,
+    latitude: pharmacy.latitude,
+    longitude: pharmacy.longitude,
+    hasCoordinates: isValidCoord(pharmacy.latitude, pharmacy.longitude),
+    locationUpdatedAt: pharmacy.locationUpdatedAt,
+  });
+});
+
+router.put('/location', requireRole('PHARMACIST', 'ADMIN'), handlePharmacyLocationUpdate);
+router.patch('/location', requireRole('PHARMACIST', 'ADMIN'), handlePharmacyLocationUpdate);
 
 module.exports = router;

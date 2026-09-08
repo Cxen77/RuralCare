@@ -8,15 +8,26 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+function resolveInitialApiBase(): string {
+  if (typeof window !== 'undefined' && window.location) {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = params.get('apiUrl');
+    if (fromQuery) return fromQuery.replace(/\/+$/, '');
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return 'http://localhost:4000';
+    }
+  }
+  return (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/+$/, '');
+}
+
 const CANDIDATE_HOSTS = [
-  process.env.EXPO_PUBLIC_API_URL,
-  'http://192.168.1.11:4000',
-  'http://127.0.0.1:4000',
+  resolveInitialApiBase(),
   'http://localhost:4000',
-  'http://192.168.1.5:4000',
+  'http://127.0.0.1:4000',
+  'http://192.168.1.11:4000',
 ].filter(Boolean) as string[];
 
-let activeApiBase = (process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.11:4000').replace(/\/+$/, '');
+let activeApiBase = resolveInitialApiBase();
 
 export const API_BASE_URL = activeApiBase;
 
@@ -176,6 +187,9 @@ export const session = {
   me: () => request<AuthUser>('GET', '/auth/me'),
 
   hasToken: () => token !== null,
+
+  /** Returns the current JWT, or null if not authenticated. */
+  getToken: () => token,
 };
 
 // ─── Health (unauthenticated) ─────────────────────────────────────────────
@@ -218,6 +232,8 @@ export const apiClient = {
   // Appointments
   getAppointments: (params: { doctorId?: string; patientId?: string; status?: string } = {}) =>
     request<any[]>('GET', `/appointments${query(params)}`),
+  getDoctorAvailability: (doctorId: string, date?: string) =>
+    request<any>('GET', `/appointments/availability${query({ doctorId, date })}`),
   createAppointment: (data: unknown) => request<any>('POST', '/appointments', data),
   updateAppointment: (id: string, data: unknown) =>
     request<any>('PATCH', `/appointments/${id}`, data),
@@ -276,5 +292,21 @@ export const apiClient = {
   // AI
   aiTriage: (data: unknown) => request<any>('POST', '/ai/triage', data),
   aiChat: (data: unknown) => request<any>('POST', '/ai/chat', data),
+
+  // AI Conversation History
+  getAiConversations: () => request<any[]>('GET', '/ai/conversations'),
+  getAiConversation: (id: string) => request<any>('GET', `/ai/conversations/${id}`),
+  deleteAiConversation: (id: string) => request<any>('DELETE', `/ai/conversations/${id}`),
+
+  // Appointment Chat Messages
+  getAppointmentMessages: (appointmentId: string) =>
+    request<any[]>('GET', `/appointments/${appointmentId}/messages`),
+  sendAppointmentMessage: (appointmentId: string, text: string) =>
+    request<any>('POST', `/appointments/${appointmentId}/messages`, { text }),
+
+  // Teleconsultation Video Access
+  getVideoAccess: (appointmentId: string) =>
+    request<any>('GET', `/appointments/${appointmentId}/video/access`),
+
   getActiveBaseUrl: () => activeApiBase,
 };

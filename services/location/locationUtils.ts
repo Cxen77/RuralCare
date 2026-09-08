@@ -68,36 +68,79 @@ export function openDirections(lat: number, lng: number, label: string): void {
 
 // In-memory cache for reverse geocoding to avoid duplicate network requests
 const reverseGeocodeCache = new Map<string, string>();
+let lastNominatimRequestTime = 0;
 
 /**
  * Converts latitude and longitude coordinates into a human-readable address.
- * Uses OpenStreetMap Nominatim reverse geocoder with caching and rate limiting safety.
+ * Uses Geoapify reverse geocoding when available (CORS-friendly, fast), with
+ * graceful OpenStreetMap Nominatim fallback and rate-limiting / 429 protection.
  */
-export async function reverseGeocode(lat: number, lon: number): Promise<string> {
+export async function reverseGeocode(
+  lat: number,
+  lon: number,
+  signal?: AbortSignal
+): Promise<string> {
   const roundedKey = `${lat.toFixed(4)},${lon.toFixed(4)}`;
   if (reverseGeocodeCache.has(roundedKey)) {
     return reverseGeocodeCache.get(roundedKey)!;
   }
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+  const fallback = `Lat: ${lat.toFixed(4)}, Lon: ${lon.toFixed(4)}`;
+  if (signal?.aborted) return fallback;
 
-    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`;
-    const res = await fetch(url, {
+  // 1. Primary: Geoapify reverse geocoder (CORS-friendly, reliable on web & native)
+  const geoapifyKey = process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY;
+  if (geoapifyKey) {
+    try {
+      const geoapifyUrl = `https://api.geoapify.com/v1/geocode/reverse?lat=${lat}&lon=${lon}&apiKey=${geoapifyKey}`;
+      const res = await fetch(geoapifyUrl, { signal });
+      if (res.ok) {
+        const data = await res.json();
+        const feat = data?.features?.[0]?.properties;
+        if (feat) {
+          const formatted =
+            feat.formatted ||
+            [feat.address_line1, feat.city || feat.county, feat.state].filter(Boolean).join(', ') ||
+            fallback;
+          reverseGeocodeCache.set(roundedKey, formatted);
+          return formatted;
+        }
+      }
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || signal?.aborted) return fallback;
+      // If Geoapify fails, fall through to Nominatim
+    }
+  }
+
+  // 2. Fallback: OpenStreetMap Nominatim with strict client rate limiting
+  const now = Date.now();
+  if (now - lastNominatimRequestTime < 1000) {
+    // Avoid spamming Nominatim within 1 second window
+    return fallback;
+  }
+  lastNominatimRequestTime = now;
+
+  try {
+    const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`;
+    const res = await fetch(nominatimUrl, {
       headers: {
-        'User-Agent': 'RuralCare-Healthcare-Platform/1.0',
+        'User-Agent': 'RuralCare-Healthcare-Platform/1.0 (contact@ruralcare.org)',
         'Accept-Language': 'en',
       },
-      signal: controller.signal,
+      signal,
     });
-    clearTimeout(timeoutId);
+
+    if (res.status === 429) {
+      console.warn('[reverseGeocode] Nominatim 429 Too Many Requests - using coordinate fallback');
+      return fallback;
+    }
 
     if (res.ok) {
       const data = await res.json();
       if (data && data.display_name) {
         const addr = data.address || {};
-        const village = addr.village || addr.suburb || addr.neighbourhood || addr.hamlet || addr.town || addr.city || '';
+        const village =
+          addr.village || addr.suburb || addr.neighbourhood || addr.hamlet || addr.town || addr.city || '';
         const district = addr.county || addr.state_district || addr.district || '';
         const state = addr.state || '';
 
@@ -113,12 +156,10 @@ export async function reverseGeocode(lat: number, lon: number): Promise<string> 
         return formatted;
       }
     }
-  } catch {
-    // Network / abort fallback
+  } catch (err: any) {
+    if (err?.name === 'AbortError' || signal?.aborted) return fallback;
   }
 
-  // Graceful coordinate fallback
-  const fallback = `Lat: ${lat.toFixed(4)}, Lon: ${lon.toFixed(4)}`;
   return fallback;
 }
 

@@ -1,53 +1,112 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Radii, Shadows, Spacing } from '../constants/theme';
-import { DOCTOR } from '../data/mock';
+import { DoctorProfileData } from '../types';
 import { Avatar, Button, Card, Chip, Divider, ToggleRow } from '../components/ui';
-import { EditDoctorProfileModal, DoctorProfileData } from '../components/EditDoctorProfileModal';
+import { EditDoctorProfileModal } from '../components/EditDoctorProfileModal';
 import { MapView } from '../components/maps/MapView';
 import { LocationPicker, ConfirmedLocation } from '../components/maps/LocationPicker';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
 
-export const ProfileScreen: React.FC = () => {
+interface ProfileScreenProps {
+  doctorProfile?: DoctorProfileData | null;
+  onUpdateDoctor?: (updated: DoctorProfileData) => void;
+  appointmentsCount?: number;
+  prescriptionsCount?: number;
+  referralsCount?: number;
+  teleconsultCount?: number;
+}
+
+export const ProfileScreen: React.FC<ProfileScreenProps> = ({
+  doctorProfile,
+  onUpdateDoctor,
+  appointmentsCount = 0,
+  prescriptionsCount = 0,
+  referralsCount = 0,
+  teleconsultCount = 0,
+}) => {
   const { user, logout } = useAuth();
-  const [doctor, setDoctor] = useState<DoctorProfileData>({
-    name: DOCTOR.name,
-    degrees: DOCTOR.degrees,
-    specialty: 'General Medicine',
-    facility: DOCTOR.facility,
-    clinicAddress: 'Main Road, Ramnagar, Vaishali, Bihar',
-    hprId: DOCTOR.hprId,
-    phone: '+91-9431-XXXXXX',
-    languages: DOCTOR.languages,
-    consultationFee: 0,
-    maxPatientsPerDay: 40,
-    ayushmanPaneled: true,
-    teleconsultation: true,
-  });
+  const [doctor, setDoctor] = useState<DoctorProfileData>(() => ({
+    name: doctorProfile?.name || user?.name || 'Dr. RuralCare',
+    degrees: doctorProfile?.degrees || 'MBBS, MD',
+    specialty: doctorProfile?.specialty || 'General Medicine',
+    facility: doctorProfile?.facility || 'Ramnagar PHC',
+    clinicAddress: doctorProfile?.clinicAddress || 'Main Road, Ramnagar, Vaishali, Bihar',
+    hprId: doctorProfile?.hprId || doctorProfile?.id || 'HPR-9482-1049-5521',
+    phone: doctorProfile?.phone || '+91-9431-XXXXXX',
+    languages: doctorProfile?.languages || ['Hindi', 'English', 'Bhojpuri'],
+    consultationFee: doctorProfile?.consultationFee ?? 0,
+    maxPatientsPerDay: doctorProfile?.maxPatientsPerDay || 40,
+    ayushmanPaneled: doctorProfile?.ayushmanPaneled ?? true,
+    teleconsultation: doctorProfile?.teleconsultation ?? true,
+    latitude: doctorProfile?.latitude || 25.9856,
+    longitude: doctorProfile?.longitude || 85.2281,
+  }));
 
   const [clinicCoordinates, setClinicCoordinates] = useState({
-    latitude: 25.9856,
-    longitude: 85.2281,
+    latitude: doctorProfile?.latitude || 25.9856,
+    longitude: doctorProfile?.longitude || 85.2281,
   });
+
+  const [mapFocusNonce, setMapFocusNonce] = useState(0);
+
+  useEffect(() => {
+    if (doctorProfile) {
+      setDoctor(prev => ({
+        ...prev,
+        ...doctorProfile,
+      }));
+      if (doctorProfile.latitude != null && doctorProfile.longitude != null) {
+        setClinicCoordinates({
+          latitude: doctorProfile.latitude,
+          longitude: doctorProfile.longitude,
+        });
+        setMapFocusNonce(n => n + 1);
+      }
+    }
+  }, [doctorProfile]);
 
   const [available, setAvailable] = useState(true);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);
 
-  const handleUpdateDoctor = (updated: DoctorProfileData) => {
+  const handleUpdateDoctor = async (updated: DoctorProfileData) => {
     setDoctor(updated);
+    onUpdateDoctor?.(updated);
+    try {
+      const docId = user?.doctorId || doctorProfile?.id;
+      if (docId) {
+        await api.patch(`/doctors/${docId}`, updated);
+      }
+    } catch (e) {
+      console.warn('Failed to save doctor profile:', e);
+    }
   };
 
-  const handleLocationConfirmed = (loc: ConfirmedLocation) => {
-    setClinicCoordinates({
+  const handleLocationConfirmed = async (loc: ConfirmedLocation) => {
+    const coords = {
       latitude: loc.latitude,
       longitude: loc.longitude,
-    });
-    setDoctor(prev => ({
-      ...prev,
+    };
+    setClinicCoordinates(coords);
+    const updated = {
+      ...doctor,
       clinicAddress: loc.address,
-    }));
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+    };
+    setDoctor(updated);
+    onUpdateDoctor?.(updated);
+    try {
+      const docId = user?.doctorId || doctorProfile?.id;
+      if (docId) {
+        await api.patch(`/doctors/${docId}`, { clinicAddress: loc.address, ...coords });
+      }
+    } catch (e) {
+      console.warn('Failed to save doctor location:', e);
+    }
   };
 
   return (
@@ -110,6 +169,7 @@ export const ProfileScreen: React.FC = () => {
           latitude={clinicCoordinates.latitude}
           longitude={clinicCoordinates.longitude}
           zoom={15}
+          focusNonce={mapFocusNonce}
           markers={[
             {
               id: 'clinic-loc',
@@ -192,12 +252,12 @@ export const ProfileScreen: React.FC = () => {
 
       {/* Facility Stats */}
       <Card radius={Radii.lg} elevation="none">
-        <Text style={styles.statsTitle}>This Week</Text>
+        <Text style={styles.statsTitle}>Activity & Performance</Text>
         <Divider style={{ marginVertical: 8 }} />
-        <View style={styles.statRow}><Text style={styles.statLabel}>Consultations</Text><Text style={styles.statValue}>42</Text></View>
-        <View style={styles.statRow}><Text style={styles.statLabel}>Prescriptions Issued</Text><Text style={styles.statValue}>38</Text></View>
-        <View style={styles.statRow}><Text style={styles.statLabel}>Referrals Created</Text><Text style={styles.statValue}>5</Text></View>
-        <View style={styles.statRow}><Text style={styles.statLabel}>Teleconsultations</Text><Text style={styles.statValue}>9</Text></View>
+        <View style={styles.statRow}><Text style={styles.statLabel}>Completed Consultations</Text><Text style={styles.statValue}>{appointmentsCount}</Text></View>
+        <View style={styles.statRow}><Text style={styles.statLabel}>Prescriptions Issued</Text><Text style={styles.statValue}>{prescriptionsCount}</Text></View>
+        <View style={styles.statRow}><Text style={styles.statLabel}>Referrals Created</Text><Text style={styles.statValue}>{referralsCount}</Text></View>
+        <View style={styles.statRow}><Text style={styles.statLabel}>Teleconsultations</Text><Text style={styles.statValue}>{teleconsultCount}</Text></View>
       </Card>
 
       <Button

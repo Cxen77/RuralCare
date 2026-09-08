@@ -6,7 +6,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
-  KeyboardAvoidingView, Platform, TouchableOpacity, Animated, Alert,
+  KeyboardAvoidingView, Platform, TouchableOpacity, Alert, Modal, ActivityIndicator,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Radii, Shadows, Spacing } from '../../constants/theme';
@@ -14,9 +14,9 @@ import { useCarePlatform } from '../../context/CarePlatformContext';
 import { AIService } from '../../services/ai/AIService';
 import { DoctorMatchingService } from '../../services/ai/DoctorMatchingService';
 import { TriageStateMachine } from '../../services/ai/TriageStateMachine';
-import { Button, Chip, Tabs } from '../../components/ui';
 import { resolveDistanceLabel } from '../../services/location/locationUtils';
 import { DoctorMapCard } from '../../components/maps/DoctorMapCard';
+import { apiClient } from '../../services/apiClient';
 
 interface Props {
   onNavigate: (tab: string) => void;
@@ -84,16 +84,7 @@ interface ChatMessage {
 
 export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking }) => {
   const { doctors, bookAppointment, patient, isOnline } = useCarePlatform();
-  const [mode, setMode] = useState<'chat' | 'voice'>('chat');
-  const [aiMode, setAiMode] = useState<'online' | 'offline'>('online');
-  const [activeModel, setActiveModel] = useState<string>('');
-
-  // Voice state
-  const [isListening, setIsListening] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState('Tap to Speak');
-  const [extractedSymptoms, setExtractedSymptoms] = useState<string[]>([]);
-  const [triageSummary, setTriageSummary] = useState('');
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const aiMode: 'online' | 'offline' = 'online';
 
   // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -110,26 +101,20 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
   const [conversationHistory, setConversationHistory] = useState<{ sender: string; text: string }[]>([]);
   const chatScrollRef = useRef<ScrollView>(null);
 
+  // AI History state
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyList, setHistoryList] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
   useEffect(() => {
     TriageStateMachine.reset();
   }, []);
 
   useEffect(() => {
-    if (mode === 'chat') setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
-  }, [messages, isTyping, mode]);
-
-
-
-  useEffect(() => {
-    if (isListening) {
-      Animated.loop(Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.25, duration: 800, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-      ])).start();
-    } else {
-      pulseAnim.setValue(1);
-    }
-  }, [isListening]);
+    setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
+  }, [messages, isTyping]);
 
   const [lastRecommendedDoctor, setLastRecommendedDoctor] = useState<any>(null);
 
@@ -141,7 +126,19 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
   ]);
 
   const handleShowDoctorLocation = (doc: any) => {
-    const matchingDoc = doctors.find(d => d.id === doc.id) || doc;
+    const docId = doc.id || doc.doctorId;
+    const matchingDoc = doctors.find(d => d.id === docId || (d as any).doctorId === docId) || doc;
+    const latitude = doc.latitude != null ? doc.latitude : (matchingDoc.latitude != null ? matchingDoc.latitude : 25.9856);
+    const longitude = doc.longitude != null ? doc.longitude : (matchingDoc.longitude != null ? matchingDoc.longitude : 85.2281);
+    const clinicName = doc.clinic || doc.clinicName || matchingDoc.clinicName || 'Clinic';
+    const clinicAddress = doc.clinicAddress || doc.address || matchingDoc.clinicAddress || 'Clinic Address';
+
+    console.log('[DOCTOR MAP DEBUG] handleShowDoctorLocation:', {
+      inputDoc: doc,
+      matchingDoc,
+      finalCoords: { latitude, longitude }
+    });
+
     const mapMsg: ChatMessage = {
       id: Date.now().toString(),
       sender: 'ai',
@@ -149,14 +146,14 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
       time: formatTime(),
       source: aiMode === 'online' ? 'online_ai' : 'offline_ai',
       doctorMapCard: {
-        id: doc.id,
+        id: docId || 'doc',
         name: doc.name,
         specialty: doc.specialty,
-        clinicName: doc.clinic || doc.clinicName || 'Ramnagar PHC',
-        clinicAddress: matchingDoc.clinicAddress || 'Main Road, Ramnagar, Vaishali, Bihar',
-        latitude: matchingDoc.latitude || 25.9856,
-        longitude: matchingDoc.longitude || 85.2281,
-        distanceKm: matchingDoc.distanceKm || 2.5,
+        clinicName,
+        clinicAddress,
+        latitude,
+        longitude,
+        distanceKm: matchingDoc.distanceKm || doc.distanceKm || 2.5,
       },
     };
     setMessages(prev => [...prev, mapMsg]);
@@ -188,25 +185,38 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
       const targetDoc = lastRecommendedDoctor || (doctors.length > 0 ? doctors[0] : null);
       if (targetDoc) {
         setTimeout(() => {
-          const distanceLabel = resolveDistanceLabel(
-  patient ? { latitude: patient.latitude, longitude: patient.longitude } : null,
-  targetDoc
-);
+          const docId = targetDoc.id || (targetDoc as any).doctorId;
+          const matchingDoc = doctors.find(d => d.id === docId || (d as any).doctorId === docId) || targetDoc;
+          const latitude = targetDoc.latitude != null ? targetDoc.latitude : (matchingDoc.latitude != null ? matchingDoc.latitude : 25.9856);
+          const longitude = targetDoc.longitude != null ? targetDoc.longitude : (matchingDoc.longitude != null ? matchingDoc.longitude : 85.2281);
+          const clinicName = targetDoc.clinicName || targetDoc.clinic || matchingDoc.clinicName || 'Clinic';
+          const clinicAddress = targetDoc.clinicAddress || (targetDoc as any).address || matchingDoc.clinicAddress || 'Clinic Address';
 
-const aiMsg: ChatMessage = {
+          const distanceLabel = resolveDistanceLabel(
+            patient ? { latitude: patient.latitude, longitude: patient.longitude } : null,
+            { ...targetDoc, latitude, longitude }
+          );
+
+          console.log('[DOCTOR MAP DEBUG] locationQuery:', {
+            targetDoc,
+            matchingDoc,
+            finalCoords: { latitude, longitude }
+          });
+
+          const aiMsg: ChatMessage = {
             id: (Date.now() + 1).toString(),
             sender: 'ai',
-            text: `${targetDoc.name} is stationed at ${targetDoc.clinicName || targetDoc.clinic || 'Ramnagar PHC'}. Here is the clinic map and directions:`,
+            text: `${targetDoc.name} is stationed at ${clinicName}. Here is the clinic map and directions:`,
             time: formatTime(),
             source: aiMode === 'online' ? 'online_ai' : 'offline_ai',
             doctorMapCard: {
-              id: targetDoc.id,
+              id: docId || 'doc',
               name: targetDoc.name,
               specialty: targetDoc.specialty,
-              clinicName: targetDoc.clinicName || targetDoc.clinic || 'Ramnagar PHC',
-              clinicAddress: targetDoc.clinicAddress || 'Main Road, Ramnagar, Vaishali, Bihar',
-              latitude: targetDoc.latitude || 25.9856,
-              longitude: targetDoc.longitude || 85.2281,
+              clinicName,
+              clinicAddress,
+              latitude,
+              longitude,
               ...distanceLabel,
             },
           };
@@ -222,8 +232,15 @@ const aiMsg: ChatMessage = {
       text,
       history,
       aiMode,
-      patient ? { latitude: patient.latitude, longitude: patient.longitude } : undefined
+      (patient?.latitude != null && patient?.longitude != null)
+        ? { latitude: patient.latitude, longitude: patient.longitude }
+        : undefined,
+      conversationId || undefined
     ).then((result) => {
+      // Track conversationId for continuation
+      if (result.conversationId) {
+        setConversationId(result.conversationId);
+      }
       let doctorCard: ChatMessage['doctorCard'] | undefined;
       let pharmacyCard: ChatMessage['pharmacyCard'] | undefined;
       let routeCard: ChatMessage['routeCard'] | undefined;
@@ -233,7 +250,7 @@ const aiMsg: ChatMessage = {
         const topDoc = result.doctors[0];
         setLastRecommendedDoctor(topDoc);
         doctorCard = {
-          id: topDoc.id,
+          id: topDoc.id || (topDoc as any).doctorId,
           name: topDoc.name,
           specialty: topDoc.specialty,
           clinic: topDoc.clinic || topDoc.clinicName,
@@ -321,116 +338,75 @@ const aiMsg: ChatMessage = {
     });
   };
 
-  const handleVoiceTriage = () => {
-    if (isListening) {
-      setIsListening(false);
-      setVoiceStatus('Ready • Tap to record more');
-    } else {
-      setIsListening(true);
-      setVoiceStatus('Listening... Speak now');
-      setTimeout(() => {
-        setIsListening(false);
-        setVoiceStatus('Analysis complete');
-        setExtractedSymptoms(['Fever (3 days)', 'Dry Cough', 'Body Ache']);
-        setTriageSummary('Patient reports moderate fever for 3 days accompanied by dry cough. Vitals stable. Recommend consultation with General Physician at Ramnagar PHC.');
-      }, 4000);
-    }
-  };
-
   return (
+    <>
     <KeyboardAvoidingView 
       style={styles.container} 
       behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      <View style={styles.topBar}>
-        <Tabs
-          options={[
-            { value: 'chat', label: 'Chat Assistant', icon: 'chat' },
-            { value: 'voice', label: 'Voice Assistant', icon: 'mic' },
-          ]}
-          value={mode}
-          onChange={v => setMode(v as 'chat' | 'voice')}
-        />
-      </View>
-
-      {mode === 'chat' ? (
-        <View style={styles.chatWrapper}>
-          <View style={styles.chatHeader}>
-            <View style={styles.headerBadge}>
-              <View style={[styles.botCircle, aiMode === 'online' ? { backgroundColor: '#0284C7' } : { backgroundColor: Colors.primary }]}>
-                <MaterialIcons name={aiMode === 'online' ? 'cloud' : 'offline-bolt'} size={18} color={Colors.white} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.headerTitle}>Clinical AI Triage</Text>
-                <Text style={styles.headerSub}>
-                  {aiMode === 'online' ? 'Online Mode • Cloud AI API' : `Offline Mode • ${activeModel || 'Local AI'}`}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.resetChatBtn}
-                onPress={() => {
-                  TriageStateMachine.reset();
-                  setMessages([
-                    {
-                      id: Date.now().toString(),
-                      sender: 'ai',
-                      text: `Namaste ${(patient?.name || 'Patient').split(' ')[0]}! I am your RuralCare AI Triage Assistant. How are you feeling today? You can describe any symptoms in English, Hindi, or Bhojpuri.`,
-                      time: formatTime(),
-                      source: aiMode === 'online' ? 'online_ai' : 'offline_ai',
-                    },
-                  ]);
-                  setConversationHistory([]);
-                  setQuickReplies([
-                    'I have a fever & cough',
-                    'I hurt my leg',
-                    'Severe headache',
-                    'Stomach pain since yesterday',
-                  ]);
-                }}
-                activeOpacity={0.7}
-                accessibilityLabel="Reset conversation"
-              >
-                <MaterialIcons name="refresh" size={16} color={Colors.secondary} />
-                <Text style={styles.resetChatBtnText}>Reset</Text>
-              </TouchableOpacity>
+      <View style={styles.chatWrapper}>
+        <View style={styles.chatHeader}>
+          <View style={styles.headerBadge}>
+            <View style={[styles.botCircle, { backgroundColor: '#0284C7' }]}>
+              <MaterialIcons name="cloud" size={18} color={Colors.white} />
             </View>
-
-            {/* Online / Offline AI Toggle Switch */}
-            <View style={styles.aiToggleWrap}>
-              <TouchableOpacity
-                style={[styles.aiToggleBtn, aiMode === 'online' && styles.aiToggleBtnActiveOnline]}
-                onPress={() => setAiMode('online')}
-                activeOpacity={0.8}
-                accessibilityLabel="Switch to Online Cloud AI"
-              >
-                <MaterialIcons
-                  name="cloud"
-                  size={13}
-                  color={aiMode === 'online' ? Colors.white : Colors.onSurfaceVariant}
-                />
-                <Text style={[styles.aiToggleBtnText, aiMode === 'online' && styles.aiToggleBtnTextActive]}>
-                  Online AI
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.aiToggleBtn, aiMode === 'offline' && styles.aiToggleBtnActiveOffline]}
-                onPress={() => setAiMode('offline')}
-                activeOpacity={0.8}
-                accessibilityLabel="Switch to Offline Local AI"
-              >
-                <MaterialIcons
-                  name="offline-bolt"
-                  size={13}
-                  color={aiMode === 'offline' ? Colors.white : Colors.onSurfaceVariant}
-                />
-                <Text style={[styles.aiToggleBtnText, aiMode === 'offline' && styles.aiToggleBtnTextActive]}>
-                  Offline Local AI
-                </Text>
-              </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.headerTitle}>Clinical AI Triage</Text>
+              <Text style={styles.headerSub}>Online Mode • Cloud AI API</Text>
             </View>
+            <TouchableOpacity
+              style={styles.resetChatBtn}
+              onPress={() => {
+                TriageStateMachine.reset();
+                setMessages([
+                  {
+                    id: Date.now().toString(),
+                    sender: 'ai',
+                    text: `Namaste ${(patient?.name || 'Patient').split(' ')[0]}! I am your RuralCare AI Triage Assistant. How are you feeling today? You can describe any symptoms in English, Hindi, or Bhojpuri.`,
+                    time: formatTime(),
+                    source: 'online_ai',
+                  },
+                ]);
+                setConversationHistory([]);
+                setConversationId(null);
+                setQuickReplies([
+                  'I have a fever & cough',
+                  'I hurt my leg',
+                  'Severe headache',
+                  'Stomach pain since yesterday',
+                ]);
+              }}
+              activeOpacity={0.7}
+              accessibilityLabel="Reset conversation"
+            >
+              <MaterialIcons name="refresh" size={16} color={Colors.secondary} />
+              <Text style={styles.resetChatBtnText}>Reset</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.resetChatBtn}
+              onPress={async () => {
+                setShowHistoryModal(true);
+                setLoadingHistory(true);
+                setHistoryError(null);
+                try {
+                  const list = await apiClient.getAiConversations();
+                  setHistoryList(list || []);
+                } catch (err: any) {
+                  setHistoryError('Unable to load conversation history.');
+                  setHistoryList([]);
+                } finally {
+                  setLoadingHistory(false);
+                }
+              }}
+              activeOpacity={0.7}
+              accessibilityLabel="Conversation history"
+            >
+              <MaterialIcons name="history" size={16} color={Colors.primary} />
+              <Text style={[styles.resetChatBtnText, { color: Colors.primary }]}>History</Text>
+            </TouchableOpacity>
           </View>
+        </View>
 
           <ScrollView ref={chatScrollRef} style={styles.messagesScroll} contentContainerStyle={styles.messagesContent} showsVerticalScrollIndicator={false}>
             {messages.map(msg => {
@@ -623,64 +599,129 @@ const aiMsg: ChatMessage = {
 
           <View style={styles.inputSection}>
             <View style={styles.inputPill}>
-              <TouchableOpacity style={styles.micBtn} onPress={() => setMode('voice')} accessibilityLabel="Switch to voice">
-                <MaterialIcons name="mic" size={20} color={Colors.primary} />
-              </TouchableOpacity>
-              <TextInput style={styles.chatInput} value={inputText} onChangeText={setInputText} placeholder="Type your symptoms..." placeholderTextColor={Colors.onSurfaceVariant} onSubmitEditing={() => handleSendMessage()} />
-              <TouchableOpacity style={[styles.sendBtn, !inputText.trim() && styles.sendBtnDisabled]} onPress={() => handleSendMessage()} disabled={!inputText.trim()} activeOpacity={0.8}>
+              <TextInput
+                style={styles.chatInput}
+                value={inputText}
+                onChangeText={setInputText}
+                placeholder="Type your symptoms..."
+                placeholderTextColor={Colors.onSurfaceVariant}
+                onSubmitEditing={() => handleSendMessage()}
+              />
+              <TouchableOpacity
+                style={[styles.sendBtn, !inputText.trim() && styles.sendBtnDisabled]}
+                onPress={() => handleSendMessage()}
+                disabled={!inputText.trim()}
+                activeOpacity={0.8}
+              >
                 <MaterialIcons name="send" size={18} color={inputText.trim() ? Colors.white : Colors.outline} />
               </TouchableOpacity>
             </View>
           </View>
         </View>
-      ) : (
-        <ScrollView contentContainerStyle={styles.voiceContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.voiceCard}>
-            <Text style={styles.voiceHeading}>AI Voice Symptom Intake</Text>
-            <Text style={styles.voiceHelper}>Tap microphone and speak naturally.</Text>
-            <View style={styles.micZone}>
-              {isListening && <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseAnim }] }]} />}
-              <TouchableOpacity style={[styles.voiceMicBtn, isListening && styles.voiceMicBtnActive]} onPress={handleVoiceTriage} activeOpacity={0.85}>
-                <MaterialIcons name={isListening ? 'graphic-eq' : 'mic'} size={42} color={Colors.white} />
-              </TouchableOpacity>
-            </View>
-            <Text style={[styles.voiceStatusText, isListening && { color: '#0F766E' }]}>{voiceStatus}</Text>
-
-            {extractedSymptoms.length > 0 && (
-              <View style={styles.symptomsBox}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                  <MaterialIcons name="fact-check" size={16} color={Colors.primary} />
-                  <Text style={styles.symptomsLabel}>Extracted Clinical Findings</Text>
-                </View>
-                <View style={styles.symptomsWrap}>
-                  {extractedSymptoms.map((s, i) => <Chip key={i} label={s} size="sm" icon="check" />)}
-                </View>
-              </View>
-            )}
-
-            {triageSummary !== '' && (
-              <View style={[styles.symptomsBox, { backgroundColor: Colors.primaryLight }]}>
-                <Text style={{ fontSize: 12, color: Colors.primaryDark, lineHeight: 17 }}>{triageSummary}</Text>
-              </View>
-            )}
-
-            <View style={styles.voiceActions}>
-              <View style={{ flex: 2 }}>
-                <Button label="Find Doctors" icon="person-search" block onPress={() => onNavigate('doctors')} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Button label="Reset" icon="refresh" variant="outline" block onPress={() => { setExtractedSymptoms([]); setTriageSummary(''); setVoiceStatus('Tap to Speak'); }} />
-              </View>
-            </View>
-
-            <View style={styles.disclaimer}>
-              <MaterialIcons name="info" size={16} color="#16A34A" />
-              <Text style={styles.disclaimerText}>AI provides preliminary guidance only. In emergencies, press SOS.</Text>
-            </View>
-          </View>
-        </ScrollView>
-      )}
     </KeyboardAvoidingView>
+
+    {/* AI History Modal */}
+    <Modal visible={showHistoryModal} animationType="slide" transparent onRequestClose={() => setShowHistoryModal(false)}>
+      <View style={styles.historyModalOverlay}>
+        <View style={styles.historyModalContainer}>
+          <View style={styles.historyModalHeader}>
+            <Text style={styles.historyModalTitle}>AI Conversation History</Text>
+            <TouchableOpacity onPress={() => setShowHistoryModal(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <MaterialIcons name="close" size={22} color={Colors.onSurface} />
+            </TouchableOpacity>
+          </View>
+          {loadingHistory ? (
+            <View style={styles.historyCenter}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={styles.historyCenterText}>Loading history...</Text>
+            </View>
+          ) : historyError ? (
+            <View style={styles.historyCenter}>
+              <MaterialIcons name="error-outline" size={36} color={Colors.outline} />
+              <Text style={styles.historyCenterText}>{historyError}</Text>
+            </View>
+          ) : historyList.length === 0 ? (
+            <View style={styles.historyCenter}>
+              <MaterialIcons name="chat-bubble-outline" size={36} color={Colors.outline} />
+              <Text style={styles.historyCenterText}>No previous conversations.</Text>
+            </View>
+          ) : (
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 8, padding: 16 }}>
+              {historyList.map(item => (
+                <TouchableOpacity
+                  key={item.conversationId}
+                  style={styles.historyItem}
+                  activeOpacity={0.7}
+                  onPress={async () => {
+                    try {
+                      const conv = await apiClient.getAiConversation(item.conversationId);
+                      const restoredMessages: ChatMessage[] = (conv.messages || []).map((m: any, i: number) => ({
+                        id: `hist-${i}`,
+                        sender: m.role === 'user' ? 'user' as const : 'ai' as const,
+                        text: m.content || '',
+                        time: m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+                        source: m.role === 'assistant' ? 'online_ai' as const : undefined,
+                      }));
+                      setMessages(restoredMessages.length > 0 ? restoredMessages : [{
+                        id: '1', sender: 'ai', text: 'Conversation loaded. Send a message to continue.',
+                        time: formatTime(), source: 'online_ai'
+                      }]);
+                      setConversationId(item.conversationId);
+                      setConversationHistory(
+                        (conv.messages || []).map((m: any) => ({
+                          sender: m.role === 'user' ? 'user' : 'ai',
+                          text: m.content || ''
+                        }))
+                      );
+                      setShowHistoryModal(false);
+                    } catch {
+                      Alert.alert('Error', 'Failed to load conversation.');
+                    }
+                  }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.historyItemTitle} numberOfLines={1}>
+                      {item.title || 'Untitled'}
+                    </Text>
+                    <Text style={styles.historyItemMeta}>
+                      {item.messageCount || 0} messages • {item.lastActive ? new Date(item.lastActive).toLocaleDateString() : ''}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={async (e) => {
+                      e.stopPropagation?.();
+                      Alert.alert(
+                        'Delete Conversation',
+                        'Are you sure you want to delete this conversation?',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Delete',
+                            style: 'destructive',
+                            onPress: async () => {
+                              try {
+                                await apiClient.deleteAiConversation(item.conversationId);
+                                setHistoryList(prev => prev.filter(h => h.conversationId !== item.conversationId));
+                              } catch {
+                                Alert.alert('Error', 'Failed to delete conversation.');
+                              }
+                            },
+                          },
+                        ]
+                      );
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <MaterialIcons name="delete-outline" size={20} color={Colors.outline} />
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 };
 
@@ -690,21 +731,14 @@ function formatTime() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
-  topBar: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.outlineLight },
   chatWrapper: { flex: 1 },
-  chatHeader: { paddingHorizontal: Spacing.md, paddingVertical: 10, backgroundColor: Colors.surfaceContainerLowest, borderBottomWidth: 1, borderBottomColor: Colors.outlineLight, gap: 10 },
+  chatHeader: { paddingHorizontal: Spacing.md, paddingVertical: 12, backgroundColor: Colors.surfaceContainerLowest, borderBottomWidth: 1, borderBottomColor: Colors.outlineLight },
   headerBadge: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  botCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', ...Shadows.sm },
+  botCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#0284C7', alignItems: 'center', justifyContent: 'center', ...Shadows.sm },
   headerTitle: { fontSize: 14, fontWeight: '700', color: Colors.secondary },
   headerSub: { fontSize: 11, color: Colors.onSurfaceVariant, marginTop: 1 },
   resetChatBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 5, borderRadius: Radii.full, backgroundColor: Colors.surfaceContainerLow, borderWidth: 1, borderColor: Colors.outlineLight },
   resetChatBtnText: { fontSize: 11, fontWeight: '600', color: Colors.secondary },
-  aiToggleWrap: { flexDirection: 'row', backgroundColor: Colors.surfaceContainerLow, borderRadius: Radii.full, padding: 3, borderWidth: 1, borderColor: Colors.outlineLight },
-  aiToggleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 6, paddingHorizontal: 10, borderRadius: Radii.full },
-  aiToggleBtnActiveOnline: { backgroundColor: '#0284C7', ...Shadows.sm },
-  aiToggleBtnActiveOffline: { backgroundColor: Colors.primary, ...Shadows.sm },
-  aiToggleBtnText: { fontSize: 11.5, fontWeight: '600', color: Colors.onSurfaceVariant },
-  aiToggleBtnTextActive: { color: Colors.white, fontWeight: '700' },
   messagesScroll: { flex: 1 },
   messagesContent: { padding: Spacing.md, gap: 14, paddingBottom: 16 },
   noticeBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: Colors.primaryFixedDim, paddingHorizontal: 12, paddingVertical: 8, borderRadius: Radii.md, marginBottom: 4 },
@@ -750,25 +784,18 @@ const styles = StyleSheet.create({
   quickChip: { backgroundColor: Colors.surfaceContainerLow, borderWidth: 1, borderColor: Colors.outlineLight, paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radii.full },
   quickChipText: { fontSize: 11.5, fontWeight: '600', color: Colors.primary },
   inputSection: { backgroundColor: Colors.surfaceContainerLowest, paddingHorizontal: Spacing.md, paddingVertical: 8, borderTopWidth: 1, borderTopColor: Colors.outlineLight },
-  inputPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surfaceContainerLow, borderWidth: 1, borderColor: Colors.outlineLight, borderRadius: Radii.full, paddingHorizontal: 8, paddingVertical: Platform.OS === 'ios' ? 8 : 4 },
-  micBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  inputPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surfaceContainerLow, borderWidth: 1, borderColor: Colors.outlineLight, borderRadius: Radii.full, paddingLeft: 14, paddingRight: 6, paddingVertical: Platform.OS === 'ios' ? 8 : 4 },
   chatInput: { flex: 1, fontSize: 13, color: Colors.onSurface, paddingHorizontal: 8 },
   sendBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', ...Shadows.sm },
   sendBtnDisabled: { backgroundColor: Colors.surfaceContainerHigh },
-  // Voice styles
-  voiceContent: { padding: Spacing.md, paddingBottom: 24 },
-  voiceCard: { backgroundColor: Colors.surfaceContainerLowest, borderWidth: 1, borderColor: Colors.outlineLight, borderRadius: Radii.xl, padding: Spacing.lg, alignItems: 'center', ...Shadows.sm },
-  voiceHeading: { fontSize: 18, fontWeight: '700', color: Colors.secondary },
-  voiceHelper: { fontSize: 12, color: Colors.onSurfaceVariant, textAlign: 'center', marginTop: 4 },
-  micZone: { width: 150, height: 150, alignItems: 'center', justifyContent: 'center', marginVertical: Spacing.md, position: 'relative' },
-  pulseRing: { position: 'absolute', width: 140, height: 140, borderRadius: 70, borderWidth: 3, borderColor: Colors.primary, opacity: 0.5 },
-  voiceMicBtn: { width: 86, height: 86, borderRadius: 43, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', ...Shadows.md },
-  voiceMicBtnActive: { backgroundColor: '#0F766E' },
-  voiceStatusText: { fontSize: 13.5, fontWeight: '700', color: Colors.primary, marginBottom: Spacing.md },
-  symptomsBox: { width: '100%', backgroundColor: Colors.surfaceContainerLow, borderRadius: Radii.lg, padding: 12, marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.outlineLight },
-  symptomsLabel: { fontSize: 11, fontWeight: '700', color: Colors.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 0.5 },
-  symptomsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  voiceActions: { flexDirection: 'row', gap: 8, width: '100%', marginBottom: 12 },
-  disclaimer: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0', borderRadius: Radii.md, padding: 10 },
-  disclaimerText: { fontSize: 11, color: '#166534', flex: 1, lineHeight: 15 },
+  // History Modal Styles
+  historyModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  historyModalContainer: { backgroundColor: Colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '80%', minHeight: '50%' },
+  historyModalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: Colors.outlineLight },
+  historyModalTitle: { fontSize: 16, fontWeight: '700', color: Colors.onSurface },
+  historyCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12 },
+  historyCenterText: { fontSize: 13, color: Colors.onSurfaceVariant, textAlign: 'center' },
+  historyItem: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Colors.surfaceContainerLowest, borderWidth: 1, borderColor: Colors.outlineLight, borderRadius: Radii.md, padding: 14 },
+  historyItemTitle: { fontSize: 13, fontWeight: '700', color: Colors.onSurface },
+  historyItemMeta: { fontSize: 11, color: Colors.onSurfaceVariant, marginTop: 2 },
 });

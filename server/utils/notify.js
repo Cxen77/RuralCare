@@ -22,7 +22,10 @@ async function sendNotification({
       type: type || 'info',
       title: title || 'RuralCare Alert',
       message,
-      relatedEntity: relatedEntity || {},
+      relatedEntity:
+        typeof relatedEntity === 'object' && relatedEntity !== null
+          ? `${relatedEntity.type || 'entity'}:${relatedEntity.id || ''}`
+          : (relatedEntity || ''),
       read: false,
     });
     return notif;

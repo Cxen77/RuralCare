@@ -22,8 +22,13 @@ const PrescriptionSchema = new mongoose.Schema({
   qrCode: { type: String, required: true },
   issuedAt: { type: String },
   validUntil: { type: String },
-  dispensingStatus: { type: String, enum: ['pending', 'partial', 'dispensed', 'cancelled'], default: 'pending' },
+  dispensingStatus: {
+    type: String,
+    enum: ['pending', 'sent_to_pharmacy', 'confirmed', 'preparing', 'ready_for_pickup', 'partial', 'dispensed', 'cancelled'],
+    default: 'pending',
+  },
   pharmacyId: { type: String },
+  pharmacyName: { type: String },
   reservationToken: { type: String }
 }, { timestamps: true });
 

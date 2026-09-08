@@ -52,17 +52,18 @@ class AIAgent {
     }
 
     const convId = conversationId || `conv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const patientId = user?.patientId || user?.sub || user?.id || null;
     const context = {
       conversationId: convId,
       user,
-      patientId: user?.patientId,
+      patientId,
       location: location || null
     };
 
     // 1. Check for immediate life-threatening emergencies deterministically first
     const emergencyCheck = await ToolRegistry.executeTool('checkEmergencyRedFlags', { text: trimmedMessage }, context);
     if (emergencyCheck?.isEmergency) {
-      return {
+      const emergencyResponse = {
         message: emergencyCheck.advisory,
         intent: 'emergency',
         urgency: 'emergency',
@@ -74,6 +75,10 @@ class AIAgent {
         route: null,
         conversationId: convId
       };
+      this.persistConversation(convId, patientId, trimmedMessage, emergencyResponse).catch(err => {
+        console.warn('[AIAgent] Emergency persist warning:', err.message);
+      });
+      return emergencyResponse;
     }
 
     // 2. Load recent conversation messages
@@ -362,7 +367,7 @@ class AIAgent {
       distanceKm: d.distanceKm
     }));
 
-    return {
+    const fallbackResult = {
       message: `Based on your description, a consultation with a **${spec.specialty}** doctor is recommended. Here are verified doctors nearby:`,
       intent: 'doctor_search',
       specialty: spec.specialty,
@@ -374,30 +379,50 @@ class AIAgent {
       conversationId: convId,
       source: 'deterministic_fallback'
     };
+
+    // Persist deterministic fallback conversations too
+    this.persistConversation(convId, context.patientId, userInput, fallbackResult).catch(err => {
+      console.warn('[AIAgent] Deterministic fallback persist warning:', err.message);
+    });
+
+    return fallbackResult;
   }
 
   static async persistConversation(conversationId, patientId, userMessage, agentResponse) {
     try {
-      await Conversation.findOneAndUpdate(
-        { conversationId },
-        {
-          patientId,
-          lastActive: new Date(),
-          $push: {
-            messages: [
+      // Auto-generate a title from the first user message (truncated to 50 chars)
+      const autoTitle = (userMessage || '').slice(0, 50).trim() || 'Untitled Conversation';
+
+      const updateDoc = {
+        $setOnInsert: {
+          title: autoTitle
+        },
+        $push: {
+          messages: {
+            $each: [
               { role: 'user', content: userMessage, timestamp: new Date() },
               { role: 'assistant', content: agentResponse.message, timestamp: new Date() }
             ]
-          },
-          $set: {
-            'context.specialty': agentResponse.specialty,
-            'context.doctorId': agentResponse.doctors?.[0]?.id
           }
         },
+        $set: {
+          lastActive: new Date(),
+          'context.specialty': agentResponse.specialty,
+          'context.doctorId': agentResponse.doctors?.[0]?.id
+        }
+      };
+
+      if (patientId) {
+        updateDoc.$set.patientId = patientId;
+      }
+
+      await Conversation.findOneAndUpdate(
+        { conversationId },
+        updateDoc,
         { upsert: true, new: true }
       );
     } catch (e) {
-      // Non-critical logging
+      console.error('[AIAgent] persistConversation error:', e.message);
     }
   }
 }

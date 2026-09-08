@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Radii, Spacing } from '../constants/theme';
-import { Patient, PrescriptionItem } from '../data/mock';
+import { Patient, PrescriptionItem } from '../types';
 import { Avatar, BottomSheet, Button, Chip, Divider, IconButton, Input } from './ui';
 
 interface PrescriptionSheetProps {
