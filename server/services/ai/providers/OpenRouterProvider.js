@@ -8,10 +8,7 @@ const BaseProvider = require('./BaseProvider');
 
 class OpenRouterProvider extends BaseProvider {
   constructor(config = {}) {
-    let chosenModel = config.model || process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
-    if (chosenModel.includes(':free') || chosenModel.includes('minimax-m3')) {
-      chosenModel = 'meta-llama/llama-3.3-70b-instruct';
-    }
+    const chosenModel = config.model || process.env.OPENROUTER_MODEL || 'inclusionai/ling-3.0-flash-sante:free';
     super({
       name: 'openrouter',
       apiKey: config.apiKey || process.env.OPENROUTER_API_KEY || (process.env.AI_PROVIDER === 'openrouter' ? process.env.AI_API_KEY : null),
@@ -74,7 +71,7 @@ class OpenRouterProvider extends BaseProvider {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const timeoutId = setTimeout(() => controller.abort(), 40000);
 
     try {
       let res = await fetch(`${this.baseUrl}/chat/completions`, {

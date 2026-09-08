@@ -31,27 +31,25 @@ class ProviderFactory {
       case 'hf':
         return new HuggingFaceProvider();
       default:
-        if (process.env.APINEX_API_KEY) return new APInexProvider();
-        if (process.env.GROQ_API_KEY) return new GroqProvider();
-        if (process.env.GEMINI_API_KEY) return new GeminiProvider();
         if (process.env.OPENROUTER_API_KEY) return new OpenRouterProvider();
+        if (process.env.GROQ_API_KEY) return new GroqProvider();
+        if (process.env.APINEX_API_KEY) return new APInexProvider();
         if (process.env.HUGGINGFACE_API_KEY) return new HuggingFaceProvider();
-        return new APInexProvider();
+        return new OpenRouterProvider();
     }
   }
 
   static getProviderChain() {
-    const apinex = new APInexProvider();
-    const groq = new GroqProvider();
-    const gemini = new GeminiProvider();
     const openrouter = new OpenRouterProvider();
+    const groq = new GroqProvider();
+    const apinex = new APInexProvider();
 
-    // Priority order: 1st APInex (GLM 5.3 Flash) -> 2nd Groq -> 3rd Gemini -> 4th OpenRouter
-    const chain = [apinex, groq, gemini, openrouter];
+    // Priority order: 1st OpenRouter (ling-3.0-flash-sante:free) -> 2nd Groq -> 3rd APInex
+    const chain = [openrouter, groq, apinex];
 
     // If an explicit AI_PROVIDER is set, elevate it to first
     const primaryName = (process.env.AI_PROVIDER || '').toLowerCase().trim();
-    if (primaryName && primaryName !== 'apinex') {
+    if (primaryName && primaryName !== 'openrouter') {
       const idx = chain.findIndex(p => p.name === primaryName);
       if (idx > 0) {
         const [elevated] = chain.splice(idx, 1);
@@ -60,7 +58,7 @@ class ProviderFactory {
     }
 
     const configured = chain.filter(p => p.isConfigured());
-    return configured.length > 0 ? configured : [apinex];
+    return configured.length > 0 ? configured : [openrouter];
   }
 
   static getActiveProvider() {
