@@ -8,7 +8,7 @@ import { ScrollView, StyleSheet, Text, View, TouchableOpacity, Alert } from 'rea
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Radii, Shadows, Spacing } from '../constants/theme';
 import { Appointment, Patient, Referral, DoctorProfileData } from '../types';
-import { Avatar, Badge, Button, Card, Chip, SectionHeader } from '../components/ui';
+import { Avatar, Badge, Button, Card, Chip, SectionHeader, ClinicalLoadingScreen } from '../components/ui';
 import { AppointmentChatModal } from '../components/communication/AppointmentChatModal';
 import { CallModal } from '../components/communication/CallModal';
 import { CallType } from '../services/communication/WebRTCCallingEngine';
@@ -71,6 +71,15 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         return appointments;
     }
   }, [appointments, filterMode]);
+
+  if (isLoading && appointments.length === 0) {
+    return (
+      <ClinicalLoadingScreen
+        title="RuralCare Clinical Hub"
+        subtitle="Loading patient records & active OPD queue…"
+      />
+    );
+  }
 
   return (
     <>
@@ -402,39 +411,30 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
                     <MaterialIcons name="chat" size={15} color={Colors.primary} />
                     <Text style={styles.commChatBtnText}>Chat</Text>
                   </TouchableOpacity>
-                  {appt.mode === 'video' ? (
-                    <>
-                      <TouchableOpacity
-                        style={styles.commVoiceBtn}
-                        onPress={() => {
-                          setCallType('voice');
-                          setVideoApptId(appt.id);
-                          setVideoParticipant(patient.name);
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialIcons name="call" size={15} color={Colors.primary} />
-                        <Text style={styles.commVoiceBtnText}>Voice</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.commVideoBtn}
-                        onPress={() => {
-                          setCallType('video');
-                          setVideoApptId(appt.id);
-                          setVideoParticipant(patient.name);
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialIcons name="videocam" size={15} color={Colors.white} />
-                        <Text style={styles.commVideoBtnText}>Video</Text>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <View style={[styles.commChatBtn, { opacity: 0.5 }]}>
-                      <MaterialIcons name="location-on" size={15} color={Colors.onSurfaceVariant} />
-                      <Text style={[styles.commChatBtnText, { color: Colors.onSurfaceVariant }]}>In-Person</Text>
-                    </View>
-                  )}
+                  <TouchableOpacity
+                    style={styles.commVoiceBtn}
+                    onPress={() => {
+                      setCallType('voice');
+                      setVideoApptId(appt.id);
+                      setVideoParticipant(patient.name);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialIcons name="call" size={15} color={Colors.primary} />
+                    <Text style={styles.commVoiceBtnText}>Voice</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.commVideoBtn}
+                    onPress={() => {
+                      setCallType('video');
+                      setVideoApptId(appt.id);
+                      setVideoParticipant(patient.name);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialIcons name="videocam" size={15} color={Colors.white} />
+                    <Text style={styles.commVideoBtnText}>Video</Text>
+                  </TouchableOpacity>
                 </View>
               )}
 
@@ -752,7 +752,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.outlineLight,
     padding: 12,
     gap: 8,
-    ...Shadows.xs,
+    ...Shadows.sm,
   },
   spotlightTag: {
     fontSize: 10,

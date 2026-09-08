@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Colors, Radii, Spacing } from '../constants/theme';
 import { Button, Chip, IconButton, Input, BottomSheet, Spinner } from './ui';
 import { useCarePlatform } from '../context/CarePlatformContext';
@@ -68,15 +68,18 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [consultType, setConsultType] = useState<'clinic' | 'video'>('clinic');
   const [consultationFee, setConsultationFee] = useState<number>(0);
   const [teleconsultationAvailable, setTeleconsultationAvailable] = useState(true);
-  const [reason, setReason] = useState(aiTriageSummary || '');
+  const isGenericMapPlaceholder = (text?: string) =>
+    !text || text.trim() === '' || text.toLowerCase().includes('map navigation') || text.toLowerCase().includes('doctor consultation from');
+
+  const validAiSummary = isGenericMapPlaceholder(aiTriageSummary) ? undefined : aiTriageSummary;
+
+  const [reason, setReason] = useState(validAiSummary || '');
   const [submitting, setSubmitting] = useState(false);
 
-  // Sync reason if aiTriageSummary changes
+  // Sync reason if validAiSummary changes
   useEffect(() => {
-    if (aiTriageSummary) {
-      setReason(aiTriageSummary);
-    }
-  }, [aiTriageSummary]);
+    setReason(validAiSummary || '');
+  }, [validAiSummary]);
 
   const loadAvailability = useCallback(async () => {
     if (!doctorId) return;
@@ -186,119 +189,150 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const feeLabel = isAyushmanCovered ? 'Ayushman PM-JAY: ₹0' : `₹${consultationFee}`;
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} snapPoints={['88%']}>
-      <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Book Appointment</Text>
-          <Text style={styles.subtitle}>{doctorName} • {doctorSpecialty}</Text>
-          <Text style={styles.clinicText}>{clinicName}</Text>
+    <BottomSheet visible={visible} onClose={onClose} snapPoints={['92%']} contentStyle={styles.sheetContent}>
+      <View style={styles.modalContainer}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Book Appointment</Text>
+            <Text style={styles.subtitle}>{doctorName} • {doctorSpecialty}</Text>
+            <Text style={styles.clinicText}>{clinicName}</Text>
+          </View>
+          <IconButton icon="close" size="sm" variant="neutral" onPress={onClose} />
         </View>
-        <IconButton icon="close" size="sm" variant="neutral" onPress={onClose} />
-      </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: Spacing.md }}>
-        <Text style={styles.sectionLabel}>Consultation Mode</Text>
-        <View style={styles.modeRow}>
-          <Chip
-            label="In-Person Clinic Visit"
-            icon="local-hospital"
-            selected={consultType === 'clinic'}
-            onPress={() => setConsultType('clinic')}
-            style={{ flex: 1 }}
-          />
-          {teleconsultationAvailable && (
+        {/* Scrollable Content */}
+        <ScrollView
+          style={styles.scrollArea}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={true}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={styles.sectionLabel}>Consultation Mode</Text>
+          <View style={styles.modeRow}>
             <Chip
-              label="Teleconsultation"
-              icon="videocam"
-              selected={consultType === 'video'}
-              onPress={() => setConsultType('video')}
+              label="In-Person Clinic Visit"
+              icon="local-hospital"
+              selected={consultType === 'clinic'}
+              onPress={() => setConsultType('clinic')}
               style={{ flex: 1 }}
             />
-          )}
-        </View>
-
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionLabel}>Select Date</Text>
-          {loadingAvailability && <Spinner size="small" />}
-        </View>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateRow}>
-          {availableDates.map(item => (
-            <Chip
-              key={item.date}
-              label={item.label}
-              size="sm"
-              selected={selectedDate === item.date}
-              onPress={() => handleSelectDate(item.date)}
-              style={styles.dateChip}
-            />
-          ))}
-        </ScrollView>
-
-        <Text style={styles.sectionLabel}>Select Time Slot</Text>
-        {activeSlots.length > 0 ? (
-          <View style={styles.slotGrid}>
-            {activeSlots.map(slot => (
+            {teleconsultationAvailable && (
               <Chip
-                key={slot}
-                label={slot}
-                selected={selectedSlot === slot}
-                onPress={() => setSelectedSlot(slot)}
-                style={{ width: '31.5%' }}
+                label="Teleconsultation"
+                icon="videocam"
+                selected={consultType === 'video'}
+                onPress={() => setConsultType('video')}
+                style={{ flex: 1 }}
+              />
+            )}
+          </View>
+
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionLabel}>Select Date</Text>
+            {loadingAvailability && <Spinner size="small" />}
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateRow}>
+            {availableDates.map(item => (
+              <Chip
+                key={item.date}
+                label={item.label}
+                size="sm"
+                selected={selectedDate === item.date}
+                onPress={() => handleSelectDate(item.date)}
+                style={styles.dateChip}
               />
             ))}
-          </View>
-        ) : (
-          <View style={styles.emptySlotsBox}>
-            <Text style={styles.emptySlotsText}>
-              All slots for this day are fully booked. Please select another date.
+          </ScrollView>
+
+          <Text style={styles.sectionLabel}>Select Time Slot</Text>
+          {activeSlots.length > 0 ? (
+            <View style={styles.slotGrid}>
+              {activeSlots.map(slot => (
+                <Chip
+                  key={slot}
+                  label={slot}
+                  selected={selectedSlot === slot}
+                  onPress={() => setSelectedSlot(slot)}
+                  style={{ width: '31.5%' }}
+                />
+              ))}
+            </View>
+          ) : (
+            <View style={styles.emptySlotsBox}>
+              <Text style={styles.emptySlotsText}>
+                All slots for this day are fully booked. Please select another date.
+              </Text>
+            </View>
+          )}
+
+          <Text style={styles.sectionLabel}>Reason for Visit</Text>
+          {validAiSummary ? (
+            <View style={styles.aiTriageBadge}>
+              <Text style={styles.aiTriageTitle}>AI Triage Notes for Doctor:</Text>
+              <Text style={styles.aiTriageText}>{validAiSummary}</Text>
+            </View>
+          ) : null}
+          <Input
+            value={reason}
+            onChangeText={setReason}
+            placeholder="e.g. Abdominal discomfort, fever since 2 days"
+            multiline
+          />
+
+          <View style={styles.ayushmanBox}>
+            <IconButton icon="verified" size="xs" variant="plain" color={Colors.tertiary} />
+            <Text style={styles.ayushmanText}>
+              {isAyushmanCovered
+                ? `Consultation covered 100% under Ayushman Bharat PM-JAY (ABHA: ${patient?.abhaId || 'Verified'}).`
+                : `Standard consultation fee: ₹${consultationFee}.`}
+              {isOnline ? '' : ' You are offline — this request will be queued until you reconnect.'}
             </Text>
           </View>
-        )}
+        </ScrollView>
 
-        <Text style={styles.sectionLabel}>Reason for Visit</Text>
-        {aiTriageSummary ? (
-          <View style={styles.aiTriageBadge}>
-            <Text style={styles.aiTriageTitle}>🤖 AI Triage Notes Attached for Doctor:</Text>
-            <Text style={styles.aiTriageText}>{aiTriageSummary}</Text>
-          </View>
-        ) : null}
-        <Input
-          value={reason}
-          onChangeText={setReason}
-          placeholder="e.g. Abdominal discomfort, fever since 2 days"
-          multiline
-        />
-
-        <View style={styles.ayushmanBox}>
-          <IconButton icon="verified" size="xs" variant="plain" color={Colors.tertiary} />
-          <Text style={styles.ayushmanText}>
-            {isAyushmanCovered
-              ? `Consultation covered 100% under Ayushman Bharat PM-JAY (ABHA: ${patient?.abhaId || 'Verified'}).`
-              : `Standard consultation fee: ₹${consultationFee}.`}
-            {isOnline ? '' : ' You are offline — this request will be queued until you reconnect.'}
-          </Text>
+        {/* Sticky Confirm Button Footer */}
+        <View style={styles.footer}>
+          <Button
+            label={submitting ? 'Requesting…' : `Confirm Appointment (${feeLabel})`}
+            icon="check-circle"
+            block
+            loading={submitting}
+            disabled={submitting || !doctorId || !selectedSlot}
+            onPress={handleConfirm}
+          />
         </View>
-
-        <Button
-          label={submitting ? 'Requesting…' : `Confirm Appointment (${feeLabel})`}
-          icon="check-circle"
-          block
-          loading={submitting}
-          disabled={submitting || !doctorId || !selectedSlot}
-          onPress={handleConfirm}
-          style={styles.confirmBtn}
-        />
-      </ScrollView>
+      </View>
     </BottomSheet>
   );
 };
 
 const styles = StyleSheet.create({
+  sheetContent: {
+    flex: 1,
+    paddingBottom: 0,
+  },
+  modalContainer: {
+    flex: 1,
+    height: '100%',
+    maxHeight: '100%',
+    minHeight: 0,
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+  },
+  scrollArea: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: Spacing.sm,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
     gap: 8,
   },
   title: {
@@ -320,15 +354,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 14,
-    marginBottom: 8,
+    marginTop: 10,
+    marginBottom: 6,
   },
   sectionLabel: {
     fontSize: 12,
     fontWeight: '700',
     color: Colors.onSurfaceVariant,
-    marginTop: 14,
-    marginBottom: 8,
+    marginTop: 10,
+    marginBottom: 6,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -350,7 +384,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   emptySlotsBox: {
-    padding: 16,
+    padding: 14,
     backgroundColor: '#FEF2F2',
     borderWidth: 1,
     borderColor: '#FECACA',
@@ -370,7 +404,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.tertiaryContainer,
     padding: 10,
     borderRadius: Radii.md,
-    marginTop: 14,
+    marginTop: 12,
     borderWidth: 1,
     borderColor: '#9FF4CD',
   },
@@ -380,26 +414,30 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: '500',
   },
-  confirmBtn: {
-    marginTop: 16,
+  footer: {
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 16 : Spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: Colors.outlineVariant,
+    backgroundColor: Colors.white,
   },
   aiTriageBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: '#E2E8F0',
     borderRadius: Radii.md,
     padding: 10,
     marginBottom: 8,
   },
   aiTriageTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1D4ED8',
-    marginBottom: 2,
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: Colors.onSurfaceVariant,
+    marginBottom: 3,
   },
   aiTriageText: {
-    fontSize: 11.5,
-    color: '#1E3A8A',
-    lineHeight: 16,
+    fontSize: 12,
+    color: Colors.onSurface,
+    lineHeight: 17,
   },
 });

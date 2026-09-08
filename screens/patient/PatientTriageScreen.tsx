@@ -478,7 +478,7 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
                             doctor={msg.doctorMapCard}
                             patientLocation={patient ? { latitude: patient.latitude, longitude: patient.longitude } : undefined}
                             onBookPress={(docId, name, spec, clinic) =>
-                              onOpenBooking(docId, name, spec, clinic, 'Doctor consultation from Map Navigation', ['General Consultation'])
+                              onOpenBooking(docId, name, spec, clinic)
                             }
                           />
                         </View>

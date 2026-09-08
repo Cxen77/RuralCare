@@ -13,8 +13,10 @@ import Animated, {
   useAnimatedStyle,
   withRepeat,
   withTiming,
+  withSequence,
   Easing,
 } from 'react-native-reanimated';
+import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Radii, Shadows, Spacing, Typography } from '../../constants/theme';
 
 interface SpinnerProps {
@@ -85,12 +87,89 @@ interface LoadingOverlayProps {
   label?: string;
 }
 
+export const ClinicalAnimatedLoader: React.FC<{
+  title?: string;
+  subtitle?: string;
+  showProgress?: boolean;
+}> = ({
+  title = 'RuralCare • Doctor Portal',
+  subtitle = 'Loading patient & clinical data…',
+  showProgress = true,
+}) => {
+  const pulseScale = useSharedValue(1);
+  const progressX = useSharedValue(-80);
+
+  useEffect(() => {
+    // Breathing pulse
+    pulseScale.value = withRepeat(
+      withSequence(
+        withTiming(1.08, { duration: 800, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.96, { duration: 800, easing: Easing.inOut(Easing.ease) })
+      ),
+      -1,
+      true
+    );
+
+    // Continuous progress bar slide
+    progressX.value = withRepeat(
+      withTiming(180, { duration: 1400, easing: Easing.inOut(Easing.cubic) }),
+      -1,
+      false
+    );
+  }, [pulseScale, progressX]);
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseScale.value }],
+  }));
+
+  const progressStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: progressX.value }],
+  }));
+
+  return (
+    <View style={styles.clinicalLoaderContainer}>
+      {/* Clean Modern Medical Badge - No Circle Waves */}
+      <Animated.View style={[styles.mainBadge, pulseStyle]}>
+        <MaterialIcons name="medical-services" size={32} color={Colors.white} />
+      </Animated.View>
+
+      {/* Pill Tag */}
+      <View style={styles.pillTag}>
+        <View style={styles.liveDot} />
+        <Text style={styles.pillText}>CLINICAL SYNC</Text>
+      </View>
+
+      {/* Title & Subtitle */}
+      <Text style={styles.clinicalTitle}>{title}</Text>
+      <Text style={styles.clinicalSubtitle}>{subtitle}</Text>
+
+      {/* Smooth animated progress runner */}
+      {showProgress && (
+        <View style={styles.progressBarTrack}>
+          <Animated.View style={[styles.progressBarThumb, progressStyle]} />
+        </View>
+      )}
+    </View>
+  );
+};
+
+export const ClinicalLoadingScreen: React.FC<{
+  title?: string;
+  subtitle?: string;
+}> = ({ title, subtitle }) => (
+  <View style={styles.fullScreenCenter}>
+    <ClinicalAnimatedLoader title={title} subtitle={subtitle} />
+  </View>
+);
+
 export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({ visible, label }) => (
   <Modal visible={visible} transparent animationType="fade">
     <View style={styles.overlay}>
       <View style={styles.overlayCard}>
-        <Spinner />
-        {label && <Text style={styles.overlayLabel}>{label}</Text>}
+        <ClinicalAnimatedLoader
+          title={label || 'RuralCare • Doctor Portal'}
+          subtitle="Loading patient & clinical data…"
+        />
       </View>
     </View>
   </Modal>
@@ -113,9 +192,10 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 28, 36, 0.4)',
+    backgroundColor: 'rgba(15, 28, 36, 0.55)',
     alignItems: 'center',
     justifyContent: 'center',
+    padding: Spacing.lg,
   },
   overlayCard: {
     backgroundColor: Colors.white,
@@ -123,11 +203,79 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.lg,
     paddingHorizontal: Spacing.xl,
     alignItems: 'center',
-    gap: Spacing.sm + 4,
+    width: '88%',
+    maxWidth: 340,
     ...Shadows.lg,
   },
-  overlayLabel: {
-    ...Typography.bodyMedium,
+  clinicalLoaderContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+  },
+  mainBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: Radii.xl,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
+    ...Shadows.md,
+  },
+  pillTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E0F2F1',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: Radii.full,
+    gap: 6,
+    marginBottom: Spacing.sm,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.primary,
+  },
+  pillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.primary,
+    letterSpacing: 0.8,
+  },
+  clinicalTitle: {
+    ...Typography.h3,
     color: Colors.onSurface,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  clinicalSubtitle: {
+    ...Typography.bodyMedium,
+    color: Colors.onSurfaceVariant,
+    textAlign: 'center',
+    marginBottom: Spacing.md,
+  },
+  progressBarTrack: {
+    width: 160,
+    height: 4,
+    backgroundColor: Colors.surfaceContainerHigh,
+    borderRadius: Radii.full,
+    overflow: 'hidden',
+    marginTop: Spacing.xs,
+  },
+  progressBarThumb: {
+    width: 60,
+    height: 4,
+    backgroundColor: Colors.primary,
+    borderRadius: Radii.full,
+  },
+  fullScreenCenter: {
+    flex: 1,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

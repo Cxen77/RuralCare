@@ -37,6 +37,7 @@ export const CallModal: React.FC<CallModalProps> = ({
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -87,7 +88,7 @@ export const CallModal: React.FC<CallModalProps> = ({
     return () => { unsubs.forEach((u) => u()); };
   }, [visible]);
 
-  // Attach streams to video elements (web only)
+  // Attach streams to video/audio elements (web only)
   useEffect(() => {
     if (Platform.OS === 'web' && localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
@@ -95,8 +96,17 @@ export const CallModal: React.FC<CallModalProps> = ({
   }, [localStream]);
 
   useEffect(() => {
+    if (Platform.OS === 'web' && remoteAudioRef.current && remoteStream) {
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play().catch((err) => {
+        console.warn('[CallModal] Auto-play audio failed:', err);
+      });
+    }
     if (Platform.OS === 'web' && remoteVideoRef.current && remoteStream) {
       remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play().catch((err) => {
+        console.warn('[CallModal] Auto-play video failed:', err);
+      });
     }
   }, [remoteStream]);
 
@@ -224,6 +234,16 @@ export const CallModal: React.FC<CallModalProps> = ({
       >
         {/* Background: voice or video */}
         {isVideo ? renderVideoBackground() : renderVoiceBackground()}
+
+        {/* Hidden audio element for remote voice playback on web */}
+        {Platform.OS === 'web' && (
+          <audio
+            ref={remoteAudioRef as any}
+            autoPlay
+            playsInline
+            style={{ display: 'none' } as any}
+          />
+        )}
 
         {/* Top bar (always visible during controls) */}
         {showControls && (

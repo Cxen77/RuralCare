@@ -12,6 +12,6 @@ export { AppDialog } from './Dialog';
 export { BottomSheet } from './BottomSheet';
 export { Tabs } from './Tabs';
 export type { TabOption } from './Tabs';
-export { Spinner, Skeleton, SkeletonCard, LoadingOverlay } from './Loading';
+export { Spinner, Skeleton, SkeletonCard, LoadingOverlay, ClinicalAnimatedLoader, ClinicalLoadingScreen } from './Loading';
 export { Avatar } from './Avatar';
 export { SectionHeader } from './SectionHeader';

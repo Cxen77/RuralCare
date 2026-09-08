@@ -19,7 +19,7 @@ import { ConsultScreen } from './screens/ConsultScreen';
 import { RxScreen } from './screens/RxScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { LoginScreen } from './screens/LoginScreen';
-import { LoadingOverlay } from './components/ui';
+import { LoadingOverlay, ClinicalLoadingScreen } from './components/ui';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { api, usePoll, session } from './services/api';
 import { getCallingEngine, IncomingCallInfo, CallType } from './services/communication/WebRTCCallingEngine';
@@ -537,7 +537,10 @@ function AuthGate() {
   if (restoring) {
     return (
       <View style={styles.gate}>
-        <LoadingOverlay visible label="Loading RuralCare…" />
+        <ClinicalLoadingScreen
+          title="RuralCare • Doctor Portal"
+          subtitle="Restoring secure clinical session…"
+        />
       </View>
     );
   }

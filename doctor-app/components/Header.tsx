@@ -89,17 +89,12 @@ export const Header: React.FC<HeaderProps> = ({
               name={docName}
               icon="medical-services"
               size={42}
-              online
             />
           </TouchableOpacity>
           <View style={styles.titleWrapper}>
             <TouchableOpacity onPress={onProfilePress} activeOpacity={0.7}>
               <View style={styles.nameRow}>
                 <Text style={styles.appName}>{docName}</Text>
-                <View style={styles.onlinePill}>
-                  <View style={styles.onlineDot} />
-                  <Text style={styles.onlinePillText}>Online</Text>
-                </View>
               </View>
             </TouchableOpacity>
             <TouchableOpacity

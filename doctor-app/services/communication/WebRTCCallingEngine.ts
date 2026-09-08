@@ -454,6 +454,16 @@ export class WebRTCCallingEngine {
     }
   }
 
+  private markConnected() {
+    if (this.currentCall && this.currentCall.status !== 'connected') {
+      this.currentCall.status = 'connected';
+      this.currentCall.connectedTime = new Date();
+      this.startDurationTimer();
+      this.emit('connected', { callId: this.currentCall.callId });
+      this.emit('stateChange', { ...this.currentCall });
+    }
+  }
+
   private createPeerConnection() {
     if (this.pc) return;
 
@@ -470,26 +480,35 @@ export class WebRTCCallingEngine {
     };
 
     this.pc.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        this.remoteStream = event.streams[0];
-        this.emit('remoteStream', this.remoteStream);
-
-        if (this.currentCall && this.currentCall.status !== 'connected') {
-          this.currentCall.status = 'connected';
-          this.currentCall.connectedTime = new Date();
-          this.startDurationTimer();
-          this.emit('connected', { callId: this.currentCall.callId });
-          this.emit('stateChange', { ...this.currentCall });
+      let stream = event.streams?.[0];
+      if (!stream) {
+        if (!this.remoteStream) {
+          this.remoteStream = new MediaStream();
         }
+        this.remoteStream.addTrack(event.track);
+        stream = this.remoteStream;
+      } else {
+        this.remoteStream = stream;
       }
+      this.emit('remoteStream', this.remoteStream);
+      this.markConnected();
     };
 
     this.pc.onconnectionstatechange = () => {
       const state = this.pc?.connectionState;
-      if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+      if (state === 'connected') {
+        this.markConnected();
+      } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
         if (this.currentCall && this.currentCall.status === 'connected') {
           this.endCall();
         }
+      }
+    };
+
+    this.pc.oniceconnectionstatechange = () => {
+      const state = this.pc?.iceConnectionState;
+      if (state === 'connected' || state === 'completed') {
+        this.markConnected();
       }
     };
   }
@@ -499,14 +518,47 @@ export class WebRTCCallingEngine {
 
     const isVideo = this.currentCall?.callType === 'video';
 
-    const constraints: MediaStreamConstraints = {
-      audio: true,
-      video: isVideo
-        ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
-        : false,
-    };
+    if (isVideo) {
+      try {
+        this.localStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        });
+      } catch (err1) {
+        console.warn('[WebRTC] Strict video constraints failed, trying basic video:', err1);
+        try {
+          this.localStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: true,
+          });
+        } catch (err2) {
+          console.warn('[WebRTC] Camera unavailable (in use or denied), falling back to audio only:', err2);
+          try {
+            this.localStream = await navigator.mediaDevices.getUserMedia({
+              audio: true,
+              video: false,
+            });
+            if (this.currentCall) {
+              this.currentCall.isCameraOff = true;
+            }
+          } catch (err3) {
+            console.error('[WebRTC] Audio also unavailable:', err3);
+            this.localStream = new MediaStream();
+          }
+        }
+      }
+    } else {
+      try {
+        this.localStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: false,
+        });
+      } catch (err) {
+        console.warn('[WebRTC] Microphone unavailable, using empty stream:', err);
+        this.localStream = new MediaStream();
+      }
+    }
 
-    this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
     this.emit('localStream', this.localStream);
   }
 

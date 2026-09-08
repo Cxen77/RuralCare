@@ -45,7 +45,6 @@ export const Header: React.FC<HeaderProps> = ({ onProfilePress, onSosPress, onVi
             <Avatar
               icon="person"
               size={42}
-              online={isOnline}
             />
           </TouchableOpacity>
           <View style={styles.titleWrapper}>
@@ -70,13 +69,6 @@ export const Header: React.FC<HeaderProps> = ({ onProfilePress, onSosPress, onVi
         </View>
 
         <View style={styles.rightSection}>
-          <View style={[styles.statusPill, !isOnline && styles.statusPillOffline]}>
-            <View style={[styles.statusDot, !isOnline && styles.statusDotOffline]} />
-            <Text style={[styles.statusText, !isOnline && styles.statusTextOffline]}>
-              {isOnline ? 'Online' : 'Offline'}
-            </Text>
-          </View>
-
           <IconButton
             icon="emergency"
             size="md"

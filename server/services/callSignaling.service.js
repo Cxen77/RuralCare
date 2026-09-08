@@ -58,9 +58,10 @@ async function verifyCallAccess(user, appointmentId) {
   const appt = await Appointment.findOne({ id: appointmentId }).lean();
   if (!appt) throw new Error('Appointment not found.');
 
-  // Step 6: Confirm teleconsultation mode
+  // Step 6: Confirm teleconsultation mode (auto-upgrade active appointments to teleconsultation if needed)
   if (appt.mode !== 'teleconsultation' && appt.mode !== 'video') {
-    throw new Error('Only teleconsultation appointments support calls.');
+    await Appointment.updateOne({ id: appointmentId }, { mode: 'teleconsultation' });
+    appt.mode = 'teleconsultation';
   }
 
   // Step 7: Confirm appointment is in active status
@@ -71,11 +72,11 @@ async function verifyCallAccess(user, appointmentId) {
 
   const role = user.role;
   // Step 4 & 5: Validate doctor is assigned to appointment
-  if (role === 'DOCTOR' && appt.doctorId !== user.doctorId && appt.doctorId !== user.sub) {
+  if (role === 'DOCTOR' && appt.doctorId !== user.doctorId && appt.doctorId !== user.sub && appt.doctorId !== user.id) {
     throw new Error('You are not the doctor on this appointment.');
   }
   // Step 3: Validate patient is assigned to appointment
-  if (role === 'PATIENT' && appt.patientId !== (user.patientId || user.sub)) {
+  if (role === 'PATIENT' && appt.patientId !== (user.patientId || user.sub) && appt.patientId !== user.id) {
     throw new Error('You are not the patient on this appointment.');
   }
 

@@ -84,7 +84,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
 
           <Text style={styles.callerName}>{callInfo.callerName}</Text>
           <Text style={styles.callerRole}>
-            {callInfo.callerRole === 'DOCTOR' ? '👨‍⚕️ Doctor' : '🏥 Patient'}
+            {callInfo.callerRole === 'DOCTOR' ? 'Doctor' : 'Patient'}
           </Text>
 
           {/* Action buttons */}

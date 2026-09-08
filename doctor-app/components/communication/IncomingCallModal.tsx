@@ -61,7 +61,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
           </View>
 
           <Text style={styles.callerName}>{callInfo.callerName}</Text>
-          <Text style={styles.callerRole}>{callInfo.callerRole === 'PATIENT' ? '🏥 Patient' : '👨‍⚕️ Doctor'}</Text>
+          <Text style={styles.callerRole}>{callInfo.callerRole === 'PATIENT' ? 'Patient' : 'Doctor'}</Text>
 
           <Animated.View style={[styles.actions, { transform: [{ translateY: slideUpAnim }] }]}>
             <TouchableOpacity style={styles.declineBtn} onPress={onDecline} activeOpacity={0.7}>

@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Radii, Shadows, Spacing } from '../../constants/theme';
+import { useAuth } from '../../context/AuthContext';
 
 interface AppointmentChatModalProps {
   visible: boolean;
@@ -24,7 +25,7 @@ interface AppointmentChatModalProps {
     getAppointmentMessages: (id: string) => Promise<any[]>;
     sendAppointmentMessage: (id: string, text: string) => Promise<any>;
   };
-  currentUserId: string;
+  currentUserId?: string;
 }
 
 interface ChatMsg {
@@ -39,8 +40,9 @@ interface ChatMsg {
 export const AppointmentChatModal: React.FC<AppointmentChatModalProps> = ({
   visible, onClose, appointmentId, participantName,
   appointmentDate, appointmentTime, mode,
-  api, currentUserId,
+  api, currentUserId = '',
 }) => {
+  const { user, doctorId } = useAuth();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
@@ -135,7 +137,13 @@ export const AppointmentChatModal: React.FC<AppointmentChatModalProps> = ({
               showsVerticalScrollIndicator={false}
             >
               {messages.map(msg => {
-                const isMe = msg.senderId === currentUserId;
+                const isDoctorRole = msg.senderRole?.toUpperCase() === 'DOCTOR' || msg.senderRole?.toUpperCase() === 'DOC';
+                const isMe =
+                  isDoctorRole ||
+                  (!!currentUserId && msg.senderId === currentUserId) ||
+                  (!!user?.id && msg.senderId === user.id) ||
+                  (!!user?.doctorId && msg.senderId === user.doctorId) ||
+                  (!!doctorId && msg.senderId === doctorId);
                 return (
                   <View key={msg.id} style={[styles.msgRow, isMe ? styles.msgRowMe : styles.msgRowOther]}>
                     {!isMe && (

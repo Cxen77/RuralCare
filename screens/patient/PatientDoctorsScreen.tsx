@@ -41,7 +41,7 @@ export const PatientDoctorsScreen: React.FC<Props> = ({ onOpenBooking, onOpenDoc
     let mounted = true;
     const fetchPresence = async () => {
       try {
-        const data = await apiClient.get<Record<string, { isOnline: boolean; lastSeen?: string; doctorName?: string }>>('/presence/doctors');
+        const data = await ((apiClient as any).request ? (apiClient as any).request('/presence/doctors') : (apiClient as any).get?.('/presence/doctors'));
         if (mounted && data) {
           setPresenceMap(data);
         }
@@ -67,7 +67,8 @@ export const PatientDoctorsScreen: React.FC<Props> = ({ onOpenBooking, onOpenDoc
     return list.sort((a, b) => a.distanceKm - b.distanceKm);
   }, [doctors, selectedSpecialty, showAyushmanOnly]);
 
-  const getActiveAppt = (docId: string) => appointments.find(a => a.doctorId === docId && ['confirmed', 'in_consultation'].includes(a.status));
+  const getActiveAppt = (docId: string) =>
+    appointments.find(a => a.doctorId === docId && ['confirmed', 'in_consultation', 'booked', 'scheduled', 'pending'].includes(a.status));
 
   const currentUserId = patient?.id || '';
 
@@ -80,29 +81,6 @@ export const PatientDoctorsScreen: React.FC<Props> = ({ onOpenBooking, onOpenDoc
   };
 
   const startCall = (appt: any, doctorName: string, type: CallType) => {
-    const presence = presenceMap[appt.doctorId];
-    const isOnline = presence?.isOnline;
-
-    if (!isOnline) {
-      Alert.alert(
-        `${doctorName} is Offline`,
-        `${doctorName} is currently offline. Would you like to send a message via Chat, or attempt to call anyway?`,
-        [
-          { text: 'Chat Now', onPress: () => openChat(appt, doctorName) },
-          {
-            text: 'Call Anyway',
-            onPress: () => {
-              setCallApptId(appt.id);
-              setCallPeerName(doctorName);
-              setCallType(type);
-            },
-          },
-          { text: 'Cancel', style: 'cancel' },
-        ]
-      );
-      return;
-    }
-
     setCallApptId(appt.id);
     setCallPeerName(doctorName);
     setCallType(type);
@@ -213,31 +191,22 @@ export const PatientDoctorsScreen: React.FC<Props> = ({ onOpenBooking, onOpenDoc
                     <MaterialIcons name="chat" size={16} color={Colors.primary} />
                     <Text style={styles.chatBtnText}>Chat</Text>
                   </TouchableOpacity>
-                  {activeAppt.mode === 'teleconsultation' ? (
-                    <>
-                      <TouchableOpacity
-                        style={styles.voiceBtn}
-                        onPress={() => startCall(activeAppt, doc.name, 'voice')}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialIcons name="call" size={16} color={Colors.primary} />
-                        <Text style={styles.voiceBtnText}>Voice</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.videoBtn}
-                        onPress={() => startCall(activeAppt, doc.name, 'video')}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialIcons name="videocam" size={16} color={Colors.white} />
-                        <Text style={styles.videoBtnText}>Video</Text>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <View style={[styles.chatBtn, { opacity: 0.5 }]}>
-                      <MaterialIcons name="location-on" size={16} color={Colors.onSurfaceVariant} />
-                      <Text style={[styles.chatBtnText, { color: Colors.onSurfaceVariant }]}>In-Person Visit</Text>
-                    </View>
-                  )}
+                  <TouchableOpacity
+                    style={styles.voiceBtn}
+                    onPress={() => startCall(activeAppt, doc.name, 'voice')}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialIcons name="call" size={16} color={Colors.primary} />
+                    <Text style={styles.voiceBtnText}>Voice</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.videoBtn}
+                    onPress={() => startCall(activeAppt, doc.name, 'video')}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialIcons name="videocam" size={16} color={Colors.white} />
+                    <Text style={styles.videoBtnText}>Video</Text>
+                  </TouchableOpacity>
                 </View>
               </>
             ) : doc.isAvailable ? (

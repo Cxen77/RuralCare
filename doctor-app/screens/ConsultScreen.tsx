@@ -172,7 +172,7 @@ export const ConsultScreen: React.FC<ConsultScreenProps> = ({
           participantName={patient.name}
           appointmentDate={appointment.date || ''}
           appointmentTime={appointment.time || ''}
-          appointmentMode={appointment.mode === 'video' ? 'Teleconsultation' : 'In-Person'}
+          mode={appointment.mode === 'video' ? 'Teleconsultation' : 'In-Person'}
           api={api}
         />
         <CallModal

@@ -28,10 +28,12 @@ mcp_config.json
 mcp_config.*.json
 
 # Native Android
-android/build/
-android/app/build/
-android/.gradle/
-android/local.properties
+doctor-app/android/
+android/
+**/android/build/
+**/android/app/build/
+**/android/.gradle/
+**/android/local.properties
 *.apk
 *.aab
 *.keystore

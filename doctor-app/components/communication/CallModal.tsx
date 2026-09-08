@@ -37,6 +37,7 @@ export const CallModal: React.FC<CallModalProps> = ({
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -79,8 +80,17 @@ export const CallModal: React.FC<CallModalProps> = ({
   }, [localStream]);
 
   useEffect(() => {
+    if (Platform.OS === 'web' && remoteAudioRef.current && remoteStream) {
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play().catch((err) => {
+        console.warn('[CallModal] Auto-play audio failed:', err);
+      });
+    }
     if (Platform.OS === 'web' && remoteVideoRef.current && remoteStream) {
       remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play().catch((err) => {
+        console.warn('[CallModal] Auto-play video failed:', err);
+      });
     }
   }, [remoteStream]);
 
@@ -125,11 +135,13 @@ export const CallModal: React.FC<CallModalProps> = ({
   const renderVoiceBackground = () => (
     <View style={styles.voiceBg}>
       <View style={styles.voiceGradient}>
-        <Animated.View style={[styles.pulseRing, styles.pulseRing3, { transform: [{ scale: pulseAnim }] }]} />
-        <Animated.View style={[styles.pulseRing, styles.pulseRing2, { transform: [{ scale: Animated.multiply(pulseAnim, 0.85) }] }]} />
-        <Animated.View style={[styles.pulseRing, styles.pulseRing1, { transform: [{ scale: Animated.multiply(pulseAnim, 0.7) }] }]} />
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{(peerName || '?').charAt(0).toUpperCase()}</Text>
+        <View style={styles.avatarWrapper}>
+          <Animated.View style={[styles.pulseRing, styles.pulseRing3, { transform: [{ scale: pulseAnim }] }]} />
+          <Animated.View style={[styles.pulseRing, styles.pulseRing2, { transform: [{ scale: Animated.multiply(pulseAnim, 0.85) }] }]} />
+          <Animated.View style={[styles.pulseRing, styles.pulseRing1, { transform: [{ scale: Animated.multiply(pulseAnim, 0.7) }] }]} />
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{(peerName || '?').charAt(0).toUpperCase()}</Text>
+          </View>
         </View>
         <Text style={styles.voiceName}>{peerName}</Text>
         <Text style={styles.voiceStatus}>{getStatusText()}</Text>
@@ -148,7 +160,12 @@ export const CallModal: React.FC<CallModalProps> = ({
       )}
       {!remoteStream && (
         <View style={styles.videoPlaceholder}>
-          <View style={styles.avatar}><Text style={styles.avatarText}>{(peerName || '?').charAt(0).toUpperCase()}</Text></View>
+          <View style={styles.avatarWrapper}>
+            <Animated.View style={[styles.pulseRing, styles.pulseRing3, { transform: [{ scale: pulseAnim }] }]} />
+            <Animated.View style={[styles.pulseRing, styles.pulseRing2, { transform: [{ scale: Animated.multiply(pulseAnim, 0.85) }] }]} />
+            <Animated.View style={[styles.pulseRing, styles.pulseRing1, { transform: [{ scale: Animated.multiply(pulseAnim, 0.7) }] }]} />
+            <View style={styles.avatar}><Text style={styles.avatarText}>{(peerName || '?').charAt(0).toUpperCase()}</Text></View>
+          </View>
           <Text style={styles.voiceName}>{peerName}</Text>
           <Text style={styles.voiceStatus}>{getStatusText()}</Text>
         </View>
@@ -172,6 +189,16 @@ export const CallModal: React.FC<CallModalProps> = ({
     <Modal visible={visible} animationType="slide" onRequestClose={handleEndCall} statusBarTranslucent>
       <TouchableOpacity activeOpacity={1} style={styles.container} onPress={resetControlsTimer}>
         {isVideo ? renderVideoBackground() : renderVoiceBackground()}
+
+        {/* Hidden audio element for remote voice playback on web */}
+        {Platform.OS === 'web' && (
+          <audio
+            ref={remoteAudioRef as any}
+            autoPlay
+            playsInline
+            style={{ display: 'none' } as any}
+          />
+        )}
 
         {showControls && (
           <View style={styles.topBar}>
@@ -239,6 +266,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F172A' },
   voiceBg: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   voiceGradient: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0F172A' },
+  avatarWrapper: { width: 220, height: 220, alignItems: 'center', justifyContent: 'center' },
   avatar: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#087F8C', alignItems: 'center', justifyContent: 'center', zIndex: 5 },
   avatarText: { fontSize: 40, fontWeight: '700', color: '#FFF' },
   voiceName: { fontSize: 24, fontWeight: '700', color: '#FFF', marginTop: 20, zIndex: 5 },
