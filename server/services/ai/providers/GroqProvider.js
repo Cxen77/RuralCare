@@ -8,9 +8,9 @@ const BaseProvider = require('./BaseProvider');
 
 class GroqProvider extends BaseProvider {
   constructor(config = {}) {
-    let chosenModel = config.model || process.env.GROQ_MODEL || 'qwen/qwen3.8-27b';
+    let chosenModel = config.model || process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
     if (chosenModel.includes('llama-3.3') || chosenModel === 'llama-3.3-70b-versatile') {
-      chosenModel = 'qwen/qwen3.8-27b';
+      chosenModel = 'openai/gpt-oss-120b';
     }
     super({
       name: 'groq',

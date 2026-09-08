@@ -30,14 +30,35 @@ class OpenRouterProvider extends BaseProvider {
       formattedMessages.push({ role: 'system', content: systemPrompt });
     }
 
+    const allowedToolCallIds = new Set();
     for (const msg of messages) {
-      formattedMessages.push({
-        role: msg.role,
-        content: msg.content || '',
-        ...(msg.tool_calls ? { tool_calls: msg.tool_calls } : {}),
-        ...(msg.tool_call_id ? { tool_call_id: msg.tool_call_id } : {}),
-        ...(msg.name ? { name: msg.name } : {})
-      });
+      if (msg.role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+        allowedToolCallIds.add(msg.tool_calls[0].id);
+        formattedMessages.push({
+          role: 'assistant',
+          content: msg.content || '',
+          tool_calls: [msg.tool_calls[0]]
+        });
+      } else if (msg.role === 'tool') {
+        if (allowedToolCallIds.has(msg.tool_call_id)) {
+          formattedMessages.push({
+            role: 'tool',
+            tool_call_id: msg.tool_call_id,
+            name: msg.name,
+            content: msg.content || ''
+          });
+        } else {
+          formattedMessages.push({
+            role: 'user',
+            content: `[Tool ${msg.name || 'system'} observation]: ${msg.content || ''}`
+          });
+        }
+      } else {
+        formattedMessages.push({
+          role: msg.role,
+          content: msg.content || ''
+        });
+      }
     }
 
     const payload = {
