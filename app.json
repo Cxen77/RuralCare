@@ -22,7 +22,12 @@
       "backgroundColor": "#f7fafa"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "RuralCare uses the camera for video consultations.",
+        "NSMicrophoneUsageDescription": "RuralCare uses the microphone for voice and video consultations.",
+        "NSLocationWhenInUseUsageDescription": "RuralCare uses your location to show nearby healthcare services."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -32,7 +37,11 @@
       "package": "com.anonymous.ruralcarepatient",
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.BLUETOOTH_CONNECT"
       ]
     },
     "web": {

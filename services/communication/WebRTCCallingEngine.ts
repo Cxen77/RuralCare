@@ -8,6 +8,17 @@
  * Works in both Expo Web builds and standard browsers.
  */
 
+import { Platform } from 'react-native';
+
+let NativeWebRTC: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    NativeWebRTC = require('react-native-' + 'webrtc');
+  } catch (error) {
+    console.warn('[WebRTC] Native WebRTC module is unavailable:', error);
+  }
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type CallType = 'video' | 'voice';
@@ -430,10 +441,12 @@ export class WebRTCCallingEngine {
             });
           }
 
-          await this.pc.setRemoteDescription(new (RTCSessionDescription as any)({ type: 'offer', sdp: signal.sdp }));
+          const SessionDescription = NativeWebRTC?.RTCSessionDescription || (globalThis as any).RTCSessionDescription;
+          await this.pc.setRemoteDescription(new SessionDescription({ type: 'offer', sdp: signal.sdp }));
 
           for (const c of this.pendingIceCandidates) {
-            await this.pc.addIceCandidate(new (RTCIceCandidate as any)(c));
+            const IceCandidate = NativeWebRTC?.RTCIceCandidate || (globalThis as any).RTCIceCandidate;
+            if (IceCandidate) await this.pc.addIceCandidate(new IceCandidate(c));
           }
           this.pendingIceCandidates = [];
 
@@ -450,15 +463,18 @@ export class WebRTCCallingEngine {
         }
       } else if (signal.type === 'answer') {
         if (this.pc) {
-          await this.pc.setRemoteDescription(new (RTCSessionDescription as any)({ type: 'answer', sdp: signal.sdp }));
+          const SessionDescription = NativeWebRTC?.RTCSessionDescription || (globalThis as any).RTCSessionDescription;
+          await this.pc.setRemoteDescription(new SessionDescription({ type: 'answer', sdp: signal.sdp }));
           for (const c of this.pendingIceCandidates) {
-            await this.pc.addIceCandidate(new (RTCIceCandidate as any)(c));
+            const IceCandidate = NativeWebRTC?.RTCIceCandidate || (globalThis as any).RTCIceCandidate;
+            if (IceCandidate) await this.pc.addIceCandidate(new IceCandidate(c));
           }
           this.pendingIceCandidates = [];
         }
       } else if (signal.candidate) {
-        if (this.pc && this.pc.remoteDescription && typeof RTCIceCandidate !== 'undefined') {
-          const candidate = new (RTCIceCandidate as any)(signal);
+        const IceCandidate = NativeWebRTC?.RTCIceCandidate || (globalThis as any).RTCIceCandidate;
+        if (this.pc && this.pc.remoteDescription && IceCandidate) {
+          const candidate = new IceCandidate(signal);
           await this.pc.addIceCandidate(candidate);
         } else {
           this.pendingIceCandidates.push(signal);
@@ -483,6 +499,7 @@ export class WebRTCCallingEngine {
     if (this.pc) return;
 
     const PeerConnectionClass =
+      NativeWebRTC?.RTCPeerConnection ||
       (typeof window !== 'undefined' && (window as any).RTCPeerConnection) ||
       (typeof global !== 'undefined' && (global as any).RTCPeerConnection);
 
@@ -527,8 +544,9 @@ export class WebRTCCallingEngine {
         const state = this.pc?.connectionState;
         if (state === 'connected') {
           this.markConnected();
-        } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-          if (this.currentCall && this.currentCall.status === 'connected') {
+        } else if (state === 'failed' || state === 'closed') {
+          if (this.currentCall) {
+            this.emit('error', { error: 'The call connection failed.' });
             this.endCall();
           }
         }
@@ -538,6 +556,9 @@ export class WebRTCCallingEngine {
         const state = this.pc?.iceConnectionState;
         if (state === 'connected' || state === 'completed') {
           this.markConnected();
+        } else if (state === 'failed' && this.currentCall) {
+          this.emit('error', { error: 'ICE connection failed.' });
+          this.endCall();
         }
       };
     } catch (e) {
@@ -549,30 +570,31 @@ export class WebRTCCallingEngine {
     if (this.localStream) return;
 
     const isVideo = this.currentCall?.callType === 'video';
-    const hasMedia = typeof navigator !== 'undefined' && !!navigator?.mediaDevices?.getUserMedia;
+    const getUserMedia = NativeWebRTC?.mediaDevices?.getUserMedia?.bind(NativeWebRTC.mediaDevices)
+      || (typeof navigator !== 'undefined' ? navigator?.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices) : null);
 
-    if (!hasMedia) {
-      console.log('[WebRTC] Native device media capture not present; operating signaling stream.');
+    if (!getUserMedia) {
+      console.log('[WebRTC] Device media capture is unavailable; operating signaling-only.');
       return;
     }
 
     if (isVideo) {
       try {
-        this.localStream = await navigator.mediaDevices.getUserMedia({
+        this.localStream = await getUserMedia({
           audio: true,
           video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
         });
       } catch (err1) {
         console.warn('[WebRTC] Strict video constraints failed, trying basic video:', err1);
         try {
-          this.localStream = await navigator.mediaDevices.getUserMedia({
+          this.localStream = await getUserMedia({
             audio: true,
             video: true,
           });
         } catch (err2) {
           console.warn('[WebRTC] Camera unavailable, falling back to audio:', err2);
           try {
-            this.localStream = await navigator.mediaDevices.getUserMedia({
+            this.localStream = await getUserMedia({
               audio: true,
               video: false,
             });
@@ -586,7 +608,7 @@ export class WebRTCCallingEngine {
       }
     } else {
       try {
-        this.localStream = await navigator.mediaDevices.getUserMedia({
+        this.localStream = await getUserMedia({
           audio: true,
           video: false,
         });

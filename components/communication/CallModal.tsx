@@ -15,6 +15,8 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { getCallingEngine, CallState, CallType } from '../../services/communication/WebRTCCallingEngine';
 
+const NativeRTCView = Platform.OS === 'web' ? null : require('react-native-' + 'webrtc').RTCView;
+
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 interface CallModalProps {
@@ -178,6 +180,13 @@ export const CallModal: React.FC<CallModalProps> = ({
 
   const renderVideoBackground = () => (
     <View style={styles.videoBg}>
+      {Platform.OS !== 'web' && remoteStream && NativeRTCView && (
+        <NativeRTCView
+          streamURL={(remoteStream as any).toURL()}
+          style={StyleSheet.absoluteFillObject}
+          objectFit="cover"
+        />
+      )}
       {/* Remote video (full screen) */}
       {Platform.OS === 'web' && (
         <video
@@ -214,6 +223,21 @@ export const CallModal: React.FC<CallModalProps> = ({
               width: '100%', height: '100%', objectFit: 'cover',
               borderRadius: 12, transform: 'scaleX(-1)',
             } as any}
+          />
+          {callState?.isCameraOff && (
+            <View style={styles.pipCameraOff}>
+              <MaterialIcons name="videocam-off" size={20} color="#FFF" />
+            </View>
+          )}
+        </View>
+      )}
+      {Platform.OS !== 'web' && localStream && NativeRTCView && (
+        <View style={styles.localPip}>
+          <NativeRTCView
+            streamURL={(localStream as any).toURL()}
+            style={StyleSheet.absoluteFillObject}
+            objectFit="cover"
+            mirror
           />
           {callState?.isCameraOff && (
             <View style={styles.pipCameraOff}>
