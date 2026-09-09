@@ -95,16 +95,16 @@ export class WebRTCCallingEngine {
   }
 
   private resolveBaseUrl(): string {
-    const envUrl = process.env.EXPO_PUBLIC_API_URL;
-    if (envUrl && envUrl.trim()) {
-      return envUrl.trim().replace(/\/+$/, '');
-    }
     if (typeof window !== 'undefined' && window.location) {
       const { hostname, protocol } = window.location;
       if (hostname === 'localhost' || hostname === '127.0.0.1') {
         return `${protocol}//localhost:4000`;
       }
       return `${protocol}//${hostname}:4000`;
+    }
+    const envUrl = process.env.EXPO_PUBLIC_API_URL;
+    if (envUrl && envUrl.trim()) {
+      return envUrl.trim().replace(/\/+$/, '');
     }
     return 'https://ruralcare-sia2.onrender.com';
   }

@@ -10,8 +10,6 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 function resolveInitialApiBase(): string {
-  const envUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (envUrl && envUrl.trim()) return envUrl.trim().replace(/\/+$/, '');
   if (typeof window !== 'undefined' && window.location) {
     const params = new URLSearchParams(window.location.search);
     const fromQuery = params.get('apiUrl');
@@ -20,6 +18,8 @@ function resolveInitialApiBase(): string {
       return 'http://localhost:4000';
     }
   }
+  const envUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (envUrl && envUrl.trim()) return envUrl.trim().replace(/\/+$/, '');
   return 'https://ruralcare-sia2.onrender.com';
 }
 
@@ -32,11 +32,9 @@ const CANDIDATE_HOSTS = isNative
     ].filter(Boolean) as string[]
   : [
       resolveInitialApiBase(),
-      'https://ruralcare-sia2.onrender.com',
       'http://localhost:4000',
       'http://127.0.0.1:4000',
-      'http://192.168.1.107:4000',
-      'http://192.168.1.11:4000',
+      'https://ruralcare-sia2.onrender.com',
     ].filter(Boolean) as string[];
 
 let activeApiBase = resolveInitialApiBase();
@@ -99,7 +97,8 @@ async function request<T>(
     const cleanHost = host.replace(/\/+$/, '');
     const url = `${cleanHost}/api${path}`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutMs = cleanHost.includes('localhost') || cleanHost.includes('127.0.0.1') ? 3500 : 8000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(url, {
