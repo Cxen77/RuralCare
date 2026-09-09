@@ -188,13 +188,35 @@ function DoctorApp() {
         return (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || '');
       });
     setAppointments(serverAppts);
+  }, [remoteAppointments]);
 
-    // Populate patients dynamically from real appointment records
-    setPatients(prev => {
-      const existingMap = new Map(prev.map(p => [p.id, p]));
+  useEffect(() => {
+    if (!remotePatients && !remoteAppointments) return;
+    const patientMap = new Map<string, Patient>();
+
+    // 1. Primary source: verified patient registry from backend
+    if (remotePatients) {
+      remotePatients.forEach(p => {
+        patientMap.set(p.id, {
+          id: p.id,
+          name: p.name,
+          age: p.age,
+          gender: p.gender,
+          village: p.village || 'Local Village',
+          phone: p.phone || '',
+          bloodGroup: p.bloodGroup || 'O+',
+          allergies: p.allergies || [],
+          abhaId: p.abhaId || '',
+          avatar: p.avatar,
+        });
+      });
+    }
+
+    // 2. Secondary source: any patient attached to active appointment records
+    if (remoteAppointments) {
       remoteAppointments.forEach(a => {
-        if (a.patient && a.patient.id) {
-          existingMap.set(a.patient.id, {
+        if (a.patient && a.patient.id && !patientMap.has(a.patient.id)) {
+          patientMap.set(a.patient.id, {
             id: a.patient.id,
             name: a.patient.name || `Patient ${a.patient.id}`,
             age: a.patient.age || 0,
@@ -208,31 +230,10 @@ function DoctorApp() {
           });
         }
       });
-      return Array.from(existingMap.values());
-    });
-  }, [remoteAppointments]);
+    }
 
-  useEffect(() => {
-    if (!remotePatients) return;
-    setPatients(prev => {
-      const existingMap = new Map(prev.map(p => [p.id, p]));
-      remotePatients.forEach(p => {
-        existingMap.set(p.id, {
-          id: p.id,
-          name: p.name,
-          age: p.age,
-          gender: p.gender,
-          village: p.village || 'Local Village',
-          phone: p.phone || '',
-          bloodGroup: p.bloodGroup || 'O+',
-          allergies: p.allergies || [],
-          abhaId: p.abhaId || '',
-          avatar: p.avatar,
-        });
-      });
-      return Array.from(existingMap.values());
-    });
-  }, [remotePatients]);
+    setPatients(Array.from(patientMap.values()));
+  }, [remotePatients, remoteAppointments]);
 
   useEffect(() => {
     if (!remotePrescriptions) return;
