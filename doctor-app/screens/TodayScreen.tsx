@@ -316,18 +316,18 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         </ScrollView>
       </View>
 
-      {/* Patient Cards List - Displays 1 recent patient with View All trigger */}
+      {/* Patient Cards List - Displays active OPD queue appointments */}
       <View style={styles.queueList}>
-        {filteredAppointments.slice(0, 1).map(appt => {
+        {filteredAppointments.map(appt => {
           const patient: Patient = appt.patient || patientsById[appt.patientId] || {
             id: appt.patientId || 'unknown',
-            name: (appt as any).patientName || `Patient ${appt.patientId?.slice(-4) || ''}`,
-            age: 30,
-            gender: 'Other',
-            village: 'Local',
-            phone: '',
+            name: (appt as any).patientName || (appt.patientId ? `Patient ${appt.patientId.slice(-4)}` : 'OPD Patient'),
+            age: (appt as any).patientAge || 32,
+            gender: (appt as any).patientGender || 'Patient',
+            village: (appt as any).patientVillage || 'RuralCare Clinic',
+            phone: (appt as any).patientPhone || '',
             allergies: [],
-            abhaId: 'ABHA-PENDING',
+            abhaId: (appt as any).patientAbhaId || 'ABHA Active',
             avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
           };
 
@@ -448,41 +448,14 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
                   style={{ marginTop: 4 }}
                 />
               ) : (
-                <View style={styles.completedStatusRow}>
-                  <MaterialIcons name="check-circle" size={16} color={Colors.tertiary} />
-                  <Text style={styles.completedStatusText}>Consultation Completed & Digital Rx Issued</Text>
+                <View style={styles.consultedBadge}>
+                  <MaterialIcons name="check-circle" size={14} color={Colors.tertiary} />
+                  <Text style={styles.consultedBadgeText}>Consultation Concluded • Rx Issued</Text>
                 </View>
               )}
             </Card>
           );
         })}
-
-        {/* View All / More in Queue Button */}
-        {filteredAppointments.length > 1 && (
-          <TouchableOpacity
-            style={styles.viewMoreQueueBtn}
-            onPress={() => onOpenQueue()}
-            activeOpacity={0.82}
-          >
-            <View style={styles.viewMoreLeft}>
-              <View style={styles.viewMoreIconWrap}>
-                <MaterialIcons name="groups" size={18} color={Colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.viewMoreQueueTitle}>
-                  +{filteredAppointments.length - 1} more patient{filteredAppointments.length - 1 > 1 ? 's' : ''} in queue
-                </Text>
-                <Text style={styles.viewMoreQueueSub}>
-                  Tap to view full OPD registry and attend waiting patients
-                </Text>
-              </View>
-            </View>
-            <View style={styles.viewMoreRight}>
-              <Text style={styles.viewMoreActionText}>View All</Text>
-              <MaterialIcons name="arrow-forward" size={16} color={Colors.primary} />
-            </View>
-          </TouchableOpacity>
-        )}
 
         {appointments.length === 0 ? (
           <View style={styles.emptyStateContainer}>
@@ -1102,6 +1075,21 @@ const styles = StyleSheet.create({
   commVoiceBtnText: {
     fontSize: 13,
     fontWeight: '700',
+    color: Colors.primary,
+  },
+  consultedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: Radii.md,
+    backgroundColor: Colors.surfaceContainerLow,
+    marginTop: 6,
+  },
+  consultedBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
     color: Colors.primary,
   },
 });

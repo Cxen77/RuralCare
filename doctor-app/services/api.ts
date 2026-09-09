@@ -10,6 +10,8 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 function resolveInitialApiBase(): string {
+  const envUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (envUrl && envUrl.trim()) return envUrl.trim().replace(/\/+$/, '');
   if (typeof window !== 'undefined' && window.location) {
     const params = new URLSearchParams(window.location.search);
     const fromQuery = params.get('apiUrl');
@@ -18,17 +20,24 @@ function resolveInitialApiBase(): string {
       return 'http://localhost:4000';
     }
   }
-  return (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/+$/, '');
+  return 'https://ruralcare-sia2.onrender.com';
 }
 
-const CANDIDATE_HOSTS = [
-  resolveInitialApiBase(),
-  'https://ruralcare-sia2.onrender.com',
-  'http://localhost:4000',
-  'http://127.0.0.1:4000',
-  'http://192.168.1.107:4000',
-  'http://192.168.1.11:4000',
-].filter(Boolean) as string[];
+const isNative = Platform.OS !== 'web';
+
+const CANDIDATE_HOSTS = isNative
+  ? [
+      resolveInitialApiBase(),
+      'https://ruralcare-sia2.onrender.com',
+    ].filter(Boolean) as string[]
+  : [
+      resolveInitialApiBase(),
+      'https://ruralcare-sia2.onrender.com',
+      'http://localhost:4000',
+      'http://127.0.0.1:4000',
+      'http://192.168.1.107:4000',
+      'http://192.168.1.11:4000',
+    ].filter(Boolean) as string[];
 
 let activeApiBase = resolveInitialApiBase();
 
@@ -43,6 +52,7 @@ export interface AuthUser {
   name: string;
   role: string;
   doctorId?: string;
+  patientId?: string;
 }
 
 export class ApiError extends Error {
@@ -89,7 +99,7 @@ async function request<T>(
     const cleanHost = host.replace(/\/+$/, '');
     const url = `${cleanHost}/api${path}`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
 
     try {
       const response = await fetch(url, {

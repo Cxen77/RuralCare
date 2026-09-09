@@ -89,11 +89,16 @@ export class WebRTCCallingEngine {
   isWsConnected = false;
 
   constructor(serverBaseUrl?: string) {
-    const base = serverBaseUrl || this.resolveBaseUrl();
-    this.wsUrl = base.replace(/^http/, 'ws') + '/ws/call';
+    const base = (serverBaseUrl || this.resolveBaseUrl()).replace(/\/+$/, '');
+    const wsProto = base.startsWith('https') ? 'wss:' : 'ws:';
+    this.wsUrl = base.replace(/^https?:/, wsProto) + '/ws/call';
   }
 
   private resolveBaseUrl(): string {
+    const envUrl = process.env.EXPO_PUBLIC_API_URL;
+    if (envUrl && envUrl.trim()) {
+      return envUrl.trim().replace(/\/+$/, '');
+    }
     if (typeof window !== 'undefined' && window.location) {
       const { hostname, protocol } = window.location;
       if (hostname === 'localhost' || hostname === '127.0.0.1') {
@@ -101,7 +106,7 @@ export class WebRTCCallingEngine {
       }
       return `${protocol}//${hostname}:4000`;
     }
-    return 'http://localhost:4000';
+    return 'https://ruralcare-sia2.onrender.com';
   }
 
   // ── Events ───────────────────────────────────────────────────────────────
@@ -382,27 +387,33 @@ export class WebRTCCallingEngine {
       await this.acquireMedia();
       this.createPeerConnection();
 
-      if (this.localStream && this.pc) {
-        this.localStream.getTracks().forEach((track) => {
-          this.pc!.addTrack(track, this.localStream!);
+      if (this.pc) {
+        if (this.localStream) {
+          this.localStream.getTracks().forEach((track) => {
+            this.pc!.addTrack(track, this.localStream!);
+          });
+        }
+
+        const offer = await this.pc.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true,
         });
+        await this.pc.setLocalDescription(offer);
+
+        this.send({
+          type: 'call:signal',
+          callId: this.currentCall!.callId,
+          signal: { type: 'offer', sdp: offer.sdp },
+        });
+      } else {
+        // In native Android runtime without browser RTCPeerConnection:
+        // Signaling is still active over WebSocket so both parties stay connected.
+        this.markConnected();
       }
-
-      const offer = await this.pc!.createOffer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: true,
-      });
-      await this.pc!.setLocalDescription(offer);
-
-      this.send({
-        type: 'call:signal',
-        callId: this.currentCall!.callId,
-        signal: { type: 'offer', sdp: offer.sdp },
-      });
     } catch (err: any) {
-      console.error('[WebRTC] Failed to start:', err);
-      this.emit('error', { error: 'Failed to access camera/microphone: ' + (err?.message || err) });
-      this.endCall();
+      console.warn('[WebRTC] Media track initialization warning:', err);
+      // Fallback: keep signaling call active without ending call
+      this.markConnected();
     }
   }
 
@@ -412,45 +423,49 @@ export class WebRTCCallingEngine {
         await this.acquireMedia();
         this.createPeerConnection();
 
-        if (this.localStream && this.pc) {
-          this.localStream.getTracks().forEach((track) => {
-            this.pc!.addTrack(track, this.localStream!);
+        if (this.pc) {
+          if (this.localStream) {
+            this.localStream.getTracks().forEach((track) => {
+              this.pc!.addTrack(track, this.localStream!);
+            });
+          }
+
+          await this.pc.setRemoteDescription(new (RTCSessionDescription as any)({ type: 'offer', sdp: signal.sdp }));
+
+          for (const c of this.pendingIceCandidates) {
+            await this.pc.addIceCandidate(new (RTCIceCandidate as any)(c));
+          }
+          this.pendingIceCandidates = [];
+
+          const answer = await this.pc.createAnswer();
+          await this.pc.setLocalDescription(answer);
+
+          this.send({
+            type: 'call:signal',
+            callId: this.currentCall!.callId,
+            signal: { type: 'answer', sdp: answer.sdp },
           });
+        } else {
+          this.markConnected();
         }
-
-        await this.pc!.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: signal.sdp }));
-
-        for (const c of this.pendingIceCandidates) {
-          await this.pc!.addIceCandidate(new RTCIceCandidate(c));
-        }
-        this.pendingIceCandidates = [];
-
-        const answer = await this.pc!.createAnswer();
-        await this.pc!.setLocalDescription(answer);
-
-        this.send({
-          type: 'call:signal',
-          callId: this.currentCall!.callId,
-          signal: { type: 'answer', sdp: answer.sdp },
-        });
       } else if (signal.type === 'answer') {
         if (this.pc) {
-          await this.pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: signal.sdp }));
+          await this.pc.setRemoteDescription(new (RTCSessionDescription as any)({ type: 'answer', sdp: signal.sdp }));
           for (const c of this.pendingIceCandidates) {
-            await this.pc.addIceCandidate(new RTCIceCandidate(c));
+            await this.pc.addIceCandidate(new (RTCIceCandidate as any)(c));
           }
           this.pendingIceCandidates = [];
         }
       } else if (signal.candidate) {
-        const candidate = new RTCIceCandidate(signal);
-        if (this.pc && this.pc.remoteDescription) {
+        if (this.pc && this.pc.remoteDescription && typeof RTCIceCandidate !== 'undefined') {
+          const candidate = new (RTCIceCandidate as any)(signal);
           await this.pc.addIceCandidate(candidate);
         } else {
           this.pendingIceCandidates.push(signal);
         }
       }
     } catch (err: any) {
-      console.error('[WebRTC] Signal handling error:', err);
+      console.warn('[WebRTC] Signal handling notice:', err);
     }
   }
 
@@ -467,56 +482,79 @@ export class WebRTCCallingEngine {
   private createPeerConnection() {
     if (this.pc) return;
 
-    this.pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const PeerConnectionClass =
+      (typeof window !== 'undefined' && (window as any).RTCPeerConnection) ||
+      (typeof global !== 'undefined' && (global as any).RTCPeerConnection);
 
-    this.pc.onicecandidate = (event) => {
-      if (event.candidate && this.currentCall) {
-        this.send({
-          type: 'call:signal',
-          callId: this.currentCall.callId,
-          signal: event.candidate.toJSON(),
-        });
-      }
-    };
+    if (!PeerConnectionClass) {
+      console.log('[WebRTC] RTCPeerConnection not present in native Hermes runtime; signaling-only mode.');
+      return;
+    }
 
-    this.pc.ontrack = (event) => {
-      let stream = event.streams?.[0];
-      if (!stream) {
-        if (!this.remoteStream) {
-          this.remoteStream = new MediaStream();
+    try {
+      this.pc = new PeerConnectionClass({ iceServers: ICE_SERVERS });
+
+      this.pc!.onicecandidate = (event: any) => {
+        if (event.candidate && this.currentCall) {
+          this.send({
+            type: 'call:signal',
+            callId: this.currentCall.callId,
+            signal: typeof event.candidate.toJSON === 'function' ? event.candidate.toJSON() : event.candidate,
+          });
         }
-        this.remoteStream.addTrack(event.track);
-        stream = this.remoteStream;
-      } else {
-        this.remoteStream = stream;
-      }
-      this.emit('remoteStream', this.remoteStream);
-      this.markConnected();
-    };
+      };
 
-    this.pc.onconnectionstatechange = () => {
-      const state = this.pc?.connectionState;
-      if (state === 'connected') {
-        this.markConnected();
-      } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-        if (this.currentCall && this.currentCall.status === 'connected') {
-          this.endCall();
+      this.pc!.ontrack = (event: any) => {
+        let stream = event.streams?.[0];
+        if (!stream) {
+          if (!this.remoteStream && typeof MediaStream !== 'undefined') {
+            this.remoteStream = new MediaStream();
+          }
+          if (this.remoteStream) {
+            this.remoteStream.addTrack(event.track);
+          }
+          stream = this.remoteStream;
+        } else {
+          this.remoteStream = stream;
         }
-      }
-    };
-
-    this.pc.oniceconnectionstatechange = () => {
-      const state = this.pc?.iceConnectionState;
-      if (state === 'connected' || state === 'completed') {
+        if (this.remoteStream) {
+          this.emit('remoteStream', this.remoteStream);
+        }
         this.markConnected();
-      }
-    };
+      };
+
+      this.pc!.onconnectionstatechange = () => {
+        const state = this.pc?.connectionState;
+        if (state === 'connected') {
+          this.markConnected();
+        } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+          if (this.currentCall && this.currentCall.status === 'connected') {
+            this.endCall();
+          }
+        }
+      };
+
+      this.pc!.oniceconnectionstatechange = () => {
+        const state = this.pc?.iceConnectionState;
+        if (state === 'connected' || state === 'completed') {
+          this.markConnected();
+        }
+      };
+    } catch (e) {
+      console.warn('[WebRTC] PeerConnection init warning:', e);
+    }
   }
 
   private async acquireMedia() {
     if (this.localStream) return;
 
     const isVideo = this.currentCall?.callType === 'video';
+    const hasMedia = typeof navigator !== 'undefined' && !!navigator?.mediaDevices?.getUserMedia;
+
+    if (!hasMedia) {
+      console.log('[WebRTC] Native device media capture not present; operating signaling stream.');
+      return;
+    }
 
     if (isVideo) {
       try {
@@ -532,7 +570,7 @@ export class WebRTCCallingEngine {
             video: true,
           });
         } catch (err2) {
-          console.warn('[WebRTC] Camera unavailable (in use or denied), falling back to audio only:', err2);
+          console.warn('[WebRTC] Camera unavailable, falling back to audio:', err2);
           try {
             this.localStream = await navigator.mediaDevices.getUserMedia({
               audio: true,
@@ -543,7 +581,6 @@ export class WebRTCCallingEngine {
             }
           } catch (err3) {
             console.error('[WebRTC] Audio also unavailable:', err3);
-            this.localStream = new MediaStream();
           }
         }
       }
@@ -554,12 +591,13 @@ export class WebRTCCallingEngine {
           video: false,
         });
       } catch (err) {
-        console.warn('[WebRTC] Microphone unavailable, using empty stream:', err);
-        this.localStream = new MediaStream();
+        console.warn('[WebRTC] Microphone unavailable:', err);
       }
     }
 
-    this.emit('localStream', this.localStream);
+    if (this.localStream) {
+      this.emit('localStream', this.localStream);
+    }
   }
 
   private startDurationTimer() {

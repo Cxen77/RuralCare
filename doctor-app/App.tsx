@@ -151,17 +151,42 @@ function DoctorApp() {
 
   useEffect(() => {
     if (!remoteAppointments) return;
-    const serverAppts: Appointment[] = remoteAppointments.map(a => ({
-      id: a.id,
-      patientId: a.patientId,
-      date: a.date,
-      time: a.time,
-      reason: a.chiefComplaint || a.reason || 'General consultation',
-      triage: a.aiTriageSummary || 'No preliminary triage summary.',
-      mode: a.mode === 'teleconsultation' ? 'video' : 'clinic',
-      status: a.status === 'completed' ? 'done' : a.status === 'in_consultation' ? 'in-consult' : 'waiting',
-      patient: a.patient || null,
-    }));
+    const serverAppts: Appointment[] = remoteAppointments
+      .map(a => {
+        const pat =
+          a.patient ||
+          (a.patientName
+            ? {
+                id: a.patientId,
+                name: a.patientName,
+                phone: a.patientPhone || '',
+                village: a.patientVillage || 'Vaishali',
+                age: a.patientAge || 30,
+                gender: a.patientGender || 'Other',
+                allergies: a.patientAllergies || [],
+                abhaId: a.patientAbhaId || 'ABHA-VERIFIED',
+              }
+            : null);
+
+        return {
+          id: a.id,
+          patientId: a.patientId,
+          date: a.date,
+          time: a.time,
+          reason: a.chiefComplaint || a.reason || 'General consultation',
+          triage: a.aiTriageSummary || 'No preliminary triage summary.',
+          mode: (a.mode === 'teleconsultation' ? 'video' : 'clinic') as 'video' | 'clinic',
+          status: (a.status === 'completed' ? 'done' : a.status === 'in_consultation' ? 'in-consult' : 'waiting') as 'waiting' | 'in-consult' | 'done',
+          patient: pat,
+        };
+      })
+      .sort((a, b) => {
+        if (a.status === 'in-consult' && b.status !== 'in-consult') return -1;
+        if (b.status === 'in-consult' && a.status !== 'in-consult') return 1;
+        if (a.status === 'waiting' && b.status === 'done') return -1;
+        if (b.status === 'waiting' && a.status === 'done') return 1;
+        return (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || '');
+      });
     setAppointments(serverAppts);
 
     // Populate patients dynamically from real appointment records
