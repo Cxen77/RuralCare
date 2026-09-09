@@ -18,6 +18,12 @@
     ],
     "plugins": [
       [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow RuralCare Doctor to access your location?"
+        }
+      ],
+      [
         "expo-font",
         {
           "fonts": [
@@ -30,10 +36,23 @@
       ]
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "RuralCare Doctor uses the camera for video consultations.",
+        "NSMicrophoneUsageDescription": "RuralCare Doctor uses the microphone for voice and video consultations.",
+        "NSLocationWhenInUseUsageDescription": "RuralCare Doctor uses your location to set and show clinic locations."
+      }
     },
     "android": {
       "package": "com.ruralcare.doctor",
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.BLUETOOTH_CONNECT"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#F7FAFA"
