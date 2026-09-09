@@ -1,11 +1,13 @@
 /**
  * Doctor App - PatientsScreen
- * Collapsible patient registry matching TodayScreen's rich clinical cards.
- * Displays compact single-row patient cards with chevron toggle that expand
- * into the complete workbench view (complaints, AI triage, allergies, communication, consult).
+ * Displays all patient appointment cases with individual records.
+ * Even if the same patient books multiple appointments, each appointment is
+ * treated as an individual case with its own details and actions.
+ * Cards start collapsed in a compact row with chevron toggle, and expand into
+ * the full workbench view (complaint, AI triage, allergies, comms, consult & delete).
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -15,6 +17,7 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  Alert,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Radii, Shadows, Spacing } from '../constants/theme';
@@ -33,23 +36,32 @@ interface PatientsScreenProps {
   patients: Patient[];
   statusById: Record<string, 'waiting' | 'in-consult' | 'done'>;
   appointments?: Appointment[];
-  onStartConsult: (patientId: string) => void;
+  onStartConsult: (appointmentId: string) => void;
+  onDeleteAppointment?: (appointmentId: string) => void;
 }
 
-const FILTERS = [
-  { id: 'all', label: 'All Patients' },
-  { id: 'queue', label: 'In Queue' },
-  { id: 'done', label: 'Consulted' },
-];
+interface CaseItem {
+  id: string;
+  appointmentId: string;
+  patientId: string;
+  patient: Patient;
+  appointment: Appointment;
+  status: 'waiting' | 'in-consult' | 'done';
+  dateStr: string;
+  mode: 'video' | 'clinic';
+  reason: string;
+  triage: string;
+}
 
 export const PatientsScreen: React.FC<PatientsScreenProps> = ({
   patients,
   statusById,
   appointments = [],
   onStartConsult,
+  onDeleteAppointment,
 }) => {
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState<'all' | 'queue' | 'in-consult' | 'done'>('all');
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
 
   // Communication modal state
@@ -70,18 +82,97 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
     }));
   };
 
-  const filtered = patients.filter(p => {
-    const nameMatch = (p.name || '').toLowerCase().includes(query.toLowerCase());
-    const villageMatch = (p.village || '').toLowerCase().includes(query.toLowerCase());
-    const abhaMatch = (p.abhaId || '').toLowerCase().includes(query.toLowerCase());
-    const matchesQuery = nameMatch || villageMatch || abhaMatch;
-    const status = statusById[p.id];
-    const matchesFilter =
-      filter === 'all' ||
-      (filter === 'queue' && (!!status && status !== 'done')) ||
-      (filter === 'done' && status === 'done');
-    return matchesQuery && matchesFilter;
-  });
+  // Convert appointments into individual case items
+  const cases = useMemo<CaseItem[]>(() => {
+    const list: CaseItem[] = [];
+    const patientMap = new Map<string, Patient>();
+    patients.forEach(p => patientMap.set(p.id, p));
+
+    appointments.forEach(appt => {
+      const patient: Patient =
+        appt.patient ||
+        patientMap.get(appt.patientId) || {
+          id: appt.patientId || 'unknown',
+          name: (appt as any).patientName || 'OPD Patient',
+          age: (appt as any).patientAge || 32,
+          gender: (appt as any).patientGender || 'Patient',
+          village: (appt as any).patientVillage || 'RuralCare Clinic',
+          phone: (appt as any).patientPhone || '',
+          allergies: (appt as any).patientAllergies || [],
+          abhaId: (appt as any).patientAbhaId || 'ABHA Active',
+          avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
+        };
+
+      const dateStr = appt.date
+        ? `${appt.date} • ${appt.time}`
+        : appt.time || 'Today';
+
+      list.push({
+        id: appt.id,
+        appointmentId: appt.id,
+        patientId: appt.patientId,
+        patient,
+        appointment: appt,
+        status: appt.status,
+        dateStr,
+        mode: appt.mode === 'video' ? 'video' : 'clinic',
+        reason: appt.reason || 'General Consultation & Health Assessment',
+        triage: appt.triage || '',
+      });
+    });
+
+    return list;
+  }, [appointments, patients]);
+
+  const waitingCount = cases.filter(c => c.status === 'waiting').length;
+  const inConsultCount = cases.filter(c => c.status === 'in-consult').length;
+  const doneCount = cases.filter(c => c.status === 'done').length;
+
+  const filters = [
+    { id: 'all' as const, label: `All Cases (${cases.length})` },
+    { id: 'queue' as const, label: `Waiting (${waitingCount})` },
+    { id: 'in-consult' as const, label: `In-Consult (${inConsultCount})` },
+    { id: 'done' as const, label: `Consulted (${doneCount})` },
+  ];
+
+  const filteredCases = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return cases.filter(item => {
+      const p = item.patient;
+      const nameMatch = (p.name || '').toLowerCase().includes(q);
+      const villageMatch = (p.village || '').toLowerCase().includes(q);
+      const abhaMatch = (p.abhaId || '').toLowerCase().includes(q);
+      const reasonMatch = (item.reason || '').toLowerCase().includes(q);
+      const idMatch = (item.id || '').toLowerCase().includes(q);
+      const matchesQuery = !q || nameMatch || villageMatch || abhaMatch || reasonMatch || idMatch;
+
+      const matchesFilter =
+        filter === 'all' ||
+        (filter === 'queue' && item.status === 'waiting') ||
+        (filter === 'in-consult' && item.status === 'in-consult') ||
+        (filter === 'done' && item.status === 'done');
+
+      return matchesQuery && matchesFilter;
+    });
+  }, [cases, query, filter]);
+
+  const handleDelete = (appointmentId: string, patientName: string) => {
+    const confirmMessage = `Are you sure you want to delete this appointment for ${patientName}?`;
+    if (Platform.OS === 'web') {
+      if (window.confirm(confirmMessage)) {
+        onDeleteAppointment?.(appointmentId);
+      }
+    } else {
+      Alert.alert('Delete Appointment', confirmMessage, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => onDeleteAppointment?.(appointmentId),
+        },
+      ]);
+    }
+  };
 
   return (
     <>
@@ -94,8 +185,12 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
             placeholder="Search patient, village or ABHA..."
             leadingIcon="search"
           />
-          <View style={styles.chipRow}>
-            {FILTERS.map(f => (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipRow}
+          >
+            {filters.map(f => (
               <Chip
                 key={f.id}
                 label={f.label}
@@ -104,30 +199,24 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
                 onPress={() => setFilter(f.id)}
               />
             ))}
-          </View>
+          </ScrollView>
         </View>
 
-        {/* Patient Cards List */}
+        {/* Patient Appointment Cases List */}
         <ScrollView
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
         >
-          {filtered.map(patient => {
-            const isExpanded = !!expandedIds[patient.id];
-            const appt = appointments.find(a => a.patientId === patient.id);
-            const status = statusById[patient.id] || (appt?.status === 'in-consult' ? 'in-consult' : appt?.status === 'done' ? 'done' : 'waiting');
-            const isWaiting = status === 'waiting';
-            const isInConsult = status === 'in-consult';
-            const isDone = status === 'done';
-
-            const reason = appt?.reason || (patient as any).chiefComplaint || 'General Consultation & Health Assessment';
-            const triage = appt?.triage || (patient as any).triage;
-            const mode = appt?.mode === 'video' ? 'video' : 'clinic';
-            const dateStr = appt?.date ? `${appt.date} • ${appt.time}` : appt?.time || 'Today';
+          {filteredCases.map(item => {
+            const isExpanded = !!expandedIds[item.id];
+            const isWaiting = item.status === 'waiting';
+            const isInConsult = item.status === 'in-consult';
+            const isDone = item.status === 'done';
+            const patient = item.patient;
 
             return (
               <Card
-                key={patient.id}
+                key={item.id}
                 padding={12}
                 radius={Radii.lg}
                 style={[
@@ -139,7 +228,7 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
                 {/* Compact Clickable Header Row */}
                 <TouchableOpacity
                   style={styles.patientTopRow}
-                  onPress={() => toggleExpand(patient.id)}
+                  onPress={() => toggleExpand(item.id)}
                   activeOpacity={0.7}
                 >
                   <Avatar uri={patient.avatar} name={patient.name} size={44} />
@@ -151,12 +240,12 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
                       </Text>
                       <View style={styles.modeTimePill}>
                         <MaterialIcons
-                          name={mode === 'video' ? 'videocam' : 'location-on'}
+                          name={item.mode === 'video' ? 'videocam' : 'location-on'}
                           size={11}
-                          color={mode === 'video' ? Colors.primary : Colors.secondary}
+                          color={item.mode === 'video' ? Colors.primary : Colors.secondary}
                         />
                         <Text style={styles.modeTimeText}>
-                          {isDone ? 'Consulted' : isInConsult ? 'In Consult' : dateStr}
+                          {isDone ? 'Consulted' : isInConsult ? 'In Consult' : item.dateStr}
                         </Text>
                       </View>
                     </View>
@@ -176,23 +265,23 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
                   </View>
                 </TouchableOpacity>
 
-                {/* Fully Expanded Details - Identical to TodayScreen Component */}
+                {/* Fully Expanded Details - Matching TodayScreen Workbench Component */}
                 {isExpanded && (
                   <View style={styles.expandedSection}>
                     {/* Chief Complaint Box */}
                     <View style={styles.complaintContainer}>
                       <Text style={styles.complaintLabel}>Reason for Visit</Text>
-                      <Text style={styles.complaintText}>{reason}</Text>
+                      <Text style={styles.complaintText}>{item.reason}</Text>
                     </View>
 
                     {/* AI Triage Findings Strip */}
-                    {!!triage && (
+                    {!!item.triage && (
                       <View style={styles.aiTriageStrip}>
                         <View style={styles.aiTriageHead}>
                           <MaterialIcons name="smart-toy" size={14} color={Colors.primary} />
                           <Text style={styles.aiTriageHeadText}>AI Triage Intake</Text>
                         </View>
-                        <Text style={styles.aiTriageSummaryText}>{triage}</Text>
+                        <Text style={styles.aiTriageSummaryText}>{item.triage}</Text>
                       </View>
                     )}
 
@@ -212,11 +301,11 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
                         <TouchableOpacity
                           style={styles.commChatBtn}
                           onPress={() => {
-                            setChatApptId(appt?.id || `appt-${patient.id}`);
+                            setChatApptId(item.appointmentId);
                             setChatParticipant(patient.name);
-                            setChatApptDate(appt?.date || '');
-                            setChatApptTime(appt?.time || '');
-                            setChatApptMode(mode === 'video' ? 'Teleconsultation' : 'In-Person');
+                            setChatApptDate(item.appointment.date || '');
+                            setChatApptTime(item.appointment.time || '');
+                            setChatApptMode(item.mode === 'video' ? 'Teleconsultation' : 'In-Person');
                           }}
                           activeOpacity={0.8}
                         >
@@ -228,7 +317,7 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
                           style={styles.commVoiceBtn}
                           onPress={() => {
                             setCallType('voice');
-                            setVideoApptId(appt?.id || `appt-${patient.id}`);
+                            setVideoApptId(item.appointmentId);
                             setVideoParticipant(patient.name);
                           }}
                           activeOpacity={0.8}
@@ -241,7 +330,7 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
                           style={styles.commVideoBtn}
                           onPress={() => {
                             setCallType('video');
-                            setVideoApptId(appt?.id || `appt-${patient.id}`);
+                            setVideoApptId(item.appointmentId);
                             setVideoParticipant(patient.name);
                           }}
                           activeOpacity={0.8}
@@ -258,7 +347,7 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
                         label={isWaiting ? 'Start Consultation' : 'Resume Consultation Workbench'}
                         icon="medical-services"
                         block
-                        onPress={() => onStartConsult(patient.id)}
+                        onPress={() => onStartConsult(item.appointmentId)}
                         style={{ marginTop: 2 }}
                       />
                     ) : (
@@ -267,33 +356,43 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
                         <Text style={styles.consultedBadgeText}>Consultation Concluded • Rx Issued</Text>
                       </View>
                     )}
+
+                    {/* Delete / Cancel Appointment Option */}
+                    {onDeleteAppointment && !isDone && (
+                      <TouchableOpacity
+                        style={styles.deleteBtn}
+                        onPress={() => handleDelete(item.appointmentId, patient.name)}
+                        activeOpacity={0.7}
+                      >
+                        <MaterialIcons name="delete-outline" size={15} color={Colors.error} />
+                        <Text style={styles.deleteBtnText}>Delete Appointment</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 )}
               </Card>
             );
           })}
 
-          {patients.length === 0 ? (
+          {cases.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <MaterialIcons name="groups" size={44} color={Colors.outline} />
-              <Text style={styles.emptyTitle}>No patients registered yet</Text>
+              <MaterialIcons name="event-available" size={44} color={Colors.outline} />
+              <Text style={styles.emptyTitle}>No appointments booked yet</Text>
               <Text style={styles.emptySub}>
-                Patients who book appointments from the RuralCare Patient App will appear here in real time.
+                When patients book consultations through the RuralCare Patient App, each appointment will appear here as an individual case.
               </Text>
             </View>
-          ) : filtered.length === 0 ? (
+          ) : filteredCases.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <MaterialIcons name="search-off" size={44} color={Colors.outline} />
-              <Text style={styles.emptyTitle}>No matching patients</Text>
-              <Text style={styles.emptySub}>
-                No patients found matching your search term or active filter.
-              </Text>
+              <MaterialIcons name="filter-list" size={44} color={Colors.outline} />
+              <Text style={styles.emptyTitle}>No cases match your search</Text>
+              <Text style={styles.emptySub}>Try adjusting your filter or search query</Text>
             </View>
           ) : null}
         </ScrollView>
       </View>
 
-      {/* Communication Modals */}
+      {/* Appointment In-App Chat Modal */}
       <AppointmentChatModal
         visible={!!chatApptId}
         onClose={() => setChatApptId(null)}
@@ -303,7 +402,10 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
         appointmentTime={chatApptTime}
         mode={chatApptMode}
         api={api}
+        currentUserId="doctor"
       />
+
+      {/* Calling Modal */}
       <CallModal
         visible={!!videoApptId}
         onClose={() => setVideoApptId(null)}
@@ -537,6 +639,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: Colors.tertiary,
+  },
+  deleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    marginTop: 4,
+    borderRadius: Radii.md,
+    backgroundColor: 'transparent',
+  },
+  deleteBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.error,
   },
   emptyContainer: {
     alignItems: 'center',

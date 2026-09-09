@@ -240,6 +240,8 @@ export const apiClient = {
   createAppointment: (data: unknown) => request<any>('POST', '/appointments', data),
   updateAppointment: (id: string, data: unknown) =>
     request<any>('PATCH', `/appointments/${id}`, data),
+  deleteAppointment: (id: string) =>
+    request<any>('DELETE', `/appointments/${id}`),
 
   // Consultations
   getConsultations: (params: { doctorId?: string; patientId?: string } = {}) =>

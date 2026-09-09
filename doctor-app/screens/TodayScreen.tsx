@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View, TouchableOpacity, Alert } from 'react-native';
+import { ScrollView, StyleSheet, Text, View, TouchableOpacity, Alert, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Radii, Shadows, Spacing } from '../constants/theme';
 import { Appointment, Patient, Referral, DoctorProfileData } from '../types';
@@ -23,6 +23,7 @@ interface TodayScreenProps {
   isOffline?: boolean;
   onStartConsult: (appointmentId: string) => void;
   onOpenQueue: () => void;
+  onDeleteAppointment?: (appointmentId: string) => void;
 }
 
 export const TodayScreen: React.FC<TodayScreenProps> = ({
@@ -34,6 +35,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   isOffline,
   onStartConsult,
   onOpenQueue,
+  onDeleteAppointment,
 }) => {
   const [filterMode, setFilterMode] = useState<'all' | 'waiting' | 'clinic' | 'video' | 'done'>('all');
 
@@ -316,9 +318,9 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         </ScrollView>
       </View>
 
-      {/* Patient Cards List - Displays active OPD queue appointments */}
+      {/* Patient Cards List - Displays most recent OPD queue appointment */}
       <View style={styles.queueList}>
-        {filteredAppointments.map(appt => {
+        {filteredAppointments.slice(0, 1).map(appt => {
           const patient: Patient = appt.patient || patientsById[appt.patientId] || {
             id: appt.patientId || 'unknown',
             name: (appt as any).patientName || (appt.patientId ? `Patient ${appt.patientId.slice(-4)}` : 'OPD Patient'),
@@ -453,9 +455,53 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
                   <Text style={styles.consultedBadgeText}>Consultation Concluded • Rx Issued</Text>
                 </View>
               )}
+
+              {/* Delete / Cancel Option */}
+              {onDeleteAppointment && !isDone && (
+                <TouchableOpacity
+                  style={styles.deleteQueueBtn}
+                  onPress={() => {
+                    const confirmMsg = `Are you sure you want to delete this appointment for ${patient.name}?`;
+                    if (Platform.OS === 'web') {
+                      if (window.confirm(confirmMsg)) {
+                        onDeleteAppointment(appt.id);
+                      }
+                    } else {
+                      Alert.alert('Delete Appointment', confirmMsg, [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Delete', style: 'destructive', onPress: () => onDeleteAppointment(appt.id) },
+                      ]);
+                    }
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <MaterialIcons name="delete-outline" size={15} color={Colors.error} />
+                  <Text style={styles.deleteQueueBtnText}>Delete Appointment</Text>
+                </TouchableOpacity>
+              )}
             </Card>
           );
         })}
+
+        {/* View All Remaining Queue Banner */}
+        {filteredAppointments.length > 1 && (
+          <TouchableOpacity
+            style={styles.moreInQueueBtn}
+            onPress={onOpenQueue}
+            activeOpacity={0.8}
+          >
+            <View style={styles.moreInQueueLeft}>
+              <MaterialIcons name="groups" size={18} color={Colors.primary} />
+              <Text style={styles.moreInQueueText}>
+                {filteredAppointments.length - 1} more patient{filteredAppointments.length - 1 > 1 ? 's' : ''} in queue
+              </Text>
+            </View>
+            <View style={styles.moreInQueueRight}>
+              <Text style={styles.moreInQueueLink}>View All in Patients Tab</Text>
+              <MaterialIcons name="arrow-forward" size={16} color={Colors.primary} />
+            </View>
+          </TouchableOpacity>
+        )}
 
         {appointments.length === 0 ? (
           <View style={styles.emptyStateContainer}>
@@ -1090,6 +1136,53 @@ const styles = StyleSheet.create({
   consultedBadgeText: {
     fontSize: 12,
     fontWeight: '600',
+    color: Colors.primary,
+  },
+  deleteQueueBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    marginTop: 6,
+    borderRadius: Radii.md,
+    backgroundColor: 'transparent',
+  },
+  deleteQueueBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.error,
+  },
+  moreInQueueBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.surfaceContainerLow,
+    borderRadius: Radii.lg,
+    borderWidth: 1.5,
+    borderColor: Colors.outlineLight,
+    marginTop: 4,
+  },
+  moreInQueueLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  moreInQueueText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  moreInQueueRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  moreInQueueLink: {
+    fontSize: 12,
+    fontWeight: '700',
     color: Colors.primary,
   },
 });

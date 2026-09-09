@@ -152,6 +152,7 @@ function DoctorApp() {
   useEffect(() => {
     if (!remoteAppointments) return;
     const serverAppts: Appointment[] = remoteAppointments
+      .filter(a => a.status !== 'cancelled')
       .map(a => {
         const pat =
           a.patient ||
@@ -450,6 +451,16 @@ function DoctorApp() {
     setActiveTab('today');
   };
 
+  const handleDeleteAppointment = async (appointmentId: string) => {
+    // Optimistically remove from state so UI updates instantly
+    setAppointments(prev => prev.filter(a => a.id !== appointmentId));
+    try {
+      await api.delete(`/appointments/${appointmentId}`);
+    } catch (err: any) {
+      console.warn('[DoctorApp] Delete appointment error:', err?.message);
+    }
+  };
+
   const handleShowNotifications = async () => {
     try {
       const notifs = await api.get<any[]>('/notifications');
@@ -485,6 +496,7 @@ function DoctorApp() {
             isOffline={appointmentsOffline}
             onStartConsult={startConsultByAppointment}
             onOpenQueue={() => setActiveTab('patients')}
+            onDeleteAppointment={handleDeleteAppointment}
           />
         )}
 
@@ -493,7 +505,8 @@ function DoctorApp() {
             patients={patients}
             statusById={statusById}
             appointments={appointments}
-            onStartConsult={startConsultByPatient}
+            onStartConsult={startConsultByAppointment}
+            onDeleteAppointment={handleDeleteAppointment}
           />
         )}
 

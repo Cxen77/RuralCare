@@ -14,28 +14,43 @@ function resolveInitialApiBase(): string {
     const params = new URLSearchParams(window.location.search);
     const fromQuery = params.get('apiUrl');
     if (fromQuery) return fromQuery.replace(/\/+$/, '');
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      return 'http://localhost:4000';
+    const hostname = window.location.hostname;
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname.startsWith('192.168.') ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('172.')
+    ) {
+      return `http://${hostname}:4000`;
     }
   }
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
   if (envUrl && envUrl.trim()) return envUrl.trim().replace(/\/+$/, '');
-  return 'https://ruralcare-sia2.onrender.com';
+  return 'http://localhost:4000';
 }
 
 const isNative = Platform.OS !== 'web';
 
+const localHostCandidates = typeof window !== 'undefined' && window.location?.hostname
+  ? [
+      `http://${window.location.hostname}:4000`,
+      'http://localhost:4000',
+      'http://127.0.0.1:4000',
+    ]
+  : ['http://localhost:4000', 'http://127.0.0.1:4000'];
+
 const CANDIDATE_HOSTS = isNative
   ? [
       resolveInitialApiBase(),
+      'http://10.0.2.2:4000',
       'https://ruralcare-sia2.onrender.com',
     ].filter(Boolean) as string[]
   : [
       resolveInitialApiBase(),
-      'http://localhost:4000',
-      'http://127.0.0.1:4000',
+      ...localHostCandidates,
       'https://ruralcare-sia2.onrender.com',
-    ].filter(Boolean) as string[];
+    ].filter((val, idx, arr) => arr.indexOf(val) === idx && Boolean(val)) as string[];
 
 let activeApiBase = resolveInitialApiBase();
 
@@ -97,7 +112,10 @@ async function request<T>(
     const cleanHost = host.replace(/\/+$/, '');
     const url = `${cleanHost}/api${path}`;
     const controller = new AbortController();
-    const timeoutMs = cleanHost.includes('localhost') || cleanHost.includes('127.0.0.1') ? 3500 : 8000;
+    const timeoutMs =
+      cleanHost.includes('localhost') || cleanHost.includes('127.0.0.1') || cleanHost.includes('192.168.')
+        ? 2000
+        : 3500;
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {

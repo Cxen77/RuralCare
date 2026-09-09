@@ -212,6 +212,44 @@ router.patch(
   })
 );
 
+router.delete(
+  '/:id',
+  requireRole('DOCTOR', 'PATIENT', 'ADMIN'),
+  asyncHandler(async (req, res) => {
+    const appt = await Appointment.findOne({ id: req.params.id });
+    if (!appt) throw new ApiError(404, 'NOT_FOUND', 'Appointment not found.');
+
+    const role = req.user?.role;
+    const userDocId = req.user?.doctorId || req.user?.sub;
+    const userPatId = req.user?.patientId || req.user?.sub;
+
+    if (role === 'DOCTOR' && appt.doctorId && appt.doctorId !== req.user?.doctorId && appt.doctorId !== userDocId) {
+      throw new ApiError(403, 'FORBIDDEN', 'You are not the assigned doctor for this appointment.');
+    }
+    if (role === 'PATIENT' && appt.patientId && appt.patientId !== userPatId && appt.patientId !== req.user?.patientId) {
+      throw new ApiError(403, 'FORBIDDEN', 'You are not authorized to delete this appointment.');
+    }
+
+    await Appointment.deleteOne({ id: req.params.id });
+
+    try {
+      await AppointmentMessage.deleteMany({ appointmentId: req.params.id });
+    } catch {}
+
+    await writeAudit({
+      actorId: req.user?.sub || 'system',
+      actorRole: req.user?.role || 'DOCTOR',
+      action: 'appointment.deleted',
+      entityType: 'appointment',
+      entityId: req.params.id,
+      before: { status: appt.status },
+      after: { status: 'deleted' },
+    });
+
+    return ok(res, { deleted: true, id: req.params.id });
+  })
+);
+
 // ── Appointment Chat Messages ──────────────────────────────────────────
 
 /**
