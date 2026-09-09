@@ -7,9 +7,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-// The portal is served by the API itself in production, so same-origin is the
-// right default. Override with VITE_API_URL when running the Vite dev server.
-export const API_BASE = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/+$/, '');
+// The portal is served by the API itself in production. During local Vite
+// development, the API runs separately on port 4000.
+const defaultApiBase = import.meta.env.DEV ? 'http://localhost:4000' : window.location.origin;
+export const API_BASE = (import.meta.env.VITE_API_URL || defaultApiBase).replace(/\/+$/, '');
 
 const API_ROOT = `${API_BASE}/api`;
 const TOKEN_KEY = 'ruralcare.pharmacy.token';

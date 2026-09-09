@@ -647,9 +647,16 @@ body {
   font-weight: 700;
 }
 
+.rx-filter.active {
+  background: var(--surface-container-lowest);
+  color: var(--tertiary);
+  border-color: var(--tertiary);
+}
+
 .filter-pill.active.alert {
-  background: var(--error-container);
-  color: var(--on-error-container);
+  background: var(--surface-container-lowest);
+  color: var(--tertiary);
+  border-color: var(--tertiary);
 }
 
 /* ── High-Density Inventory Table (Stitch Spec) ── */
@@ -816,8 +823,9 @@ body {
   font-weight: 700;
   padding: 3px 8px;
   border-radius: var(--radius-sm);
-  background: var(--on-primary-container);
-  color: var(--primary);
+  background: transparent;
+  border: 1px solid var(--tertiary);
+  color: var(--tertiary);
   display: inline-block;
 }
 
@@ -829,6 +837,49 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+/* Prescription decisions use the pharmacy's green accent consistently. */
+.rx-status.chip-in-stock,
+.rx-status.chip-low-stock,
+.rx-status.chip-out-stock {
+  background: transparent;
+  color: var(--tertiary);
+  border: 1px solid var(--tertiary);
+}
+
+.rx-stock-line {
+  color: var(--tertiary);
+}
+
+.rx-green-icon {
+  color: var(--tertiary);
+}
+
+.rx-confirm-button {
+  background: transparent;
+  border-color: var(--tertiary);
+  color: var(--tertiary);
+}
+
+.rx-confirm-button:hover {
+  background: transparent;
+  border-color: var(--tertiary);
+  color: var(--tertiary);
+}
+
+.rx-availability-button:hover,
+.rx-unavailable-button:hover {
+  border-color: var(--tertiary);
+  color: var(--tertiary);
+  background: transparent;
+}
+
+.rx-choice-selected,
+.rx-choice-selected:hover {
+  background: transparent;
+  border-color: var(--tertiary);
+  color: var(--tertiary);
 }
 
 /* ── Modal Dialogs ── */

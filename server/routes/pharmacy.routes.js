@@ -507,8 +507,9 @@ router.get(
     const callerPharmacyId = req.user.role === 'PHARMACIST' ? req.user.pharmacyId : (req.query.pharmacyId || 'ph1');
     const { id } = req.params;
 
-    // Support finding by requestId (phreq-) or prescriptionId (rx-)
+    // Support finding by requestId (phreq-), reservationId (resv-), or prescriptionId (rx-).
     let reqDoc = await PharmacyRequest.findOne({ id }).lean();
+    let reservation = null;
     let rx = null;
 
     if (reqDoc) {
@@ -517,10 +518,16 @@ router.get(
       rx = await Prescription.findOne({ id }).lean();
       if (rx) {
         reqDoc = await PharmacyRequest.findOne({ prescriptionId: rx.id, pharmacyId: callerPharmacyId }).lean();
+      } else {
+        reservation = await Reservation.findOne({ id }).lean();
+        if (reservation) {
+          rx = await Prescription.findOne({ id: reservation.prescriptionId }).lean();
+          reqDoc = await PharmacyRequest.findOne({ prescriptionId: reservation.prescriptionId, pharmacyId: callerPharmacyId }).lean();
+        }
       }
     }
 
-    if (!reqDoc && !rx) {
+    if (!reqDoc && !rx && !reservation) {
       throw new ApiError(404, 'NOT_FOUND', 'Prescription or fulfillment request not found.');
     }
 
@@ -529,6 +536,7 @@ router.get(
     if (req.user.role === 'PHARMACIST') {
       const isAssignedToPharmacy =
         (reqDoc && reqDoc.pharmacyId === callerPharmacyId) ||
+        (reservation && reservation.pharmacyId === callerPharmacyId) ||
         (rx && rx.pharmacyId === callerPharmacyId);
 
       if (!isAssignedToPharmacy) {
@@ -536,8 +544,8 @@ router.get(
       }
     }
 
-    const patientId = reqDoc?.patientId || rx?.patientId;
-    const targetPharmacyId = reqDoc?.pharmacyId || rx?.pharmacyId || callerPharmacyId;
+    const patientId = reqDoc?.patientId || reservation?.patientId || rx?.patientId;
+    const targetPharmacyId = reqDoc?.pharmacyId || reservation?.pharmacyId || rx?.pharmacyId || callerPharmacyId;
 
     const [pat, ph] = await Promise.all([
       Patient.findOne({ id: patientId }).lean(),
@@ -553,9 +561,10 @@ router.get(
 
     return ok(res, {
       requestId: reqDoc?.id || null,
-      prescriptionId: rx?.id || reqDoc?.prescriptionId,
-      prescriptionCode: rx?.qrCode || reqDoc?.prescriptionCode,
-      status: reqDoc?.status || rx?.dispensingStatus || 'pending',
+      reservationId: reservation?.id || null,
+      prescriptionId: rx?.id || reqDoc?.prescriptionId || reservation?.prescriptionId,
+      prescriptionCode: rx?.qrCode || reqDoc?.prescriptionCode || reservation?.prescriptionCode,
+      status: reqDoc?.status || reservation?.status || rx?.dispensingStatus || 'pending',
       patient: {
         id: pat?.id || patientId,
         name: pat?.name || reqDoc?.patientName || rx?.patientName || 'Patient',

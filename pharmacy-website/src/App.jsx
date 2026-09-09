@@ -920,19 +920,19 @@ export default function App({ user, onLogout }) {
               <div className="controls-card">
                 <div className="pill-group">
                   <button
-                    className={`filter-pill ${rxFilter === 'all' ? 'active' : ''}`}
+                    className={`filter-pill rx-filter ${rxFilter === 'all' ? 'active' : ''}`}
                     onClick={() => setRxFilter('all')}
                   >
                     All e-Prescriptions ({allPrescriptions.length})
                   </button>
                   <button
-                    className={`filter-pill ${rxFilter === 'pending' ? 'active alert' : ''}`}
+                    className={`filter-pill rx-filter ${rxFilter === 'pending' ? 'active alert' : ''}`}
                     onClick={() => setRxFilter('pending')}
                   >
                     Pending Verification ({pendingRxCount})
                   </button>
                   <button
-                    className={`filter-pill ${rxFilter === 'dispensed' ? 'active' : ''}`}
+                    className={`filter-pill rx-filter ${rxFilter === 'dispensed' ? 'active' : ''}`}
                     onClick={() => setRxFilter('dispensed')}
                   >
                     Dispensed ({allPrescriptions.length - pendingRxCount})
@@ -977,11 +977,11 @@ export default function App({ user, onLogout }) {
                               onClick={() => setMapModalTarget({ id: req.requestId || req.id, code: req.prescriptionCode || req.id })}
                               title="View patient & fulfillment location on interactive map"
                             >
-                              <span className="material-symbols-outlined" style={{ fontSize: 15, color: '#087F8C' }}>location_on</span>
+                              <span className="material-symbols-outlined rx-green-icon" style={{ fontSize: 15 }}>location_on</span>
                               View on Map
                             </button>
                           </div>
-                          <span className={`chip ${isDispensed ? 'chip-in-stock' : isConfirmed ? 'chip-in-stock' : 'chip-low-stock'}`}>
+                            <span className={`chip rx-status ${isDispensed ? 'chip-in-stock' : isConfirmed ? 'chip-in-stock' : 'chip-low-stock'}`}>
                             {isDispensed
                               ? 'DISPENSED'
                               : req.dispensingStatus
@@ -995,7 +995,7 @@ export default function App({ user, onLogout }) {
                         {req.reservationToken && (
                           <div style={{ margin: '8px 0', padding: '6px 12px', background: 'var(--surface-container-low)', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ fontSize: 12, color: 'var(--on-surface-variant)' }}>Pickup Token:</span>
-                            <span style={{ fontFamily: 'JetBrains Mono', fontWeight: 800, color: 'var(--primary)', fontSize: 13 }}>
+                            <span style={{ fontFamily: 'JetBrains Mono', fontWeight: 800, color: 'var(--tertiary)', fontSize: 13 }}>
                               {req.reservationToken}
                             </span>
                           </div>
@@ -1015,29 +1015,27 @@ export default function App({ user, onLogout }) {
                                   <div style={{ fontSize: 11.5, color: 'var(--on-surface-variant)' }}>
                                     {item.dose} · {item.frequency} · {item.duration} {item.quantity ? `(${item.quantity} units)` : ''}
                                   </div>
-                                  <div style={{ fontSize: 11, marginTop: 3, fontWeight: 600, color: isStockSufficient ? 'var(--tertiary)' : inStockQty > 0 ? '#d97706' : 'var(--error)' }}>
+                                  <div className="rx-stock-line" style={{ fontSize: 11, marginTop: 3, fontWeight: 600 }}>
                                     {stockMatch ? `Store Stock: ${inStockQty} units available` : 'Not found in store stock'}
                                   </div>
                                 </div>
                                 {!isResponded ? (
                                   <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                                     <button
-                                      className="btn btn-outline btn-sm"
-                                      style={{ background: (item.available === true || (item.available === null && isStockSufficient)) ? 'var(--tertiary)' : '', color: (item.available === true || (item.available === null && isStockSufficient)) ? '#fff' : '' }}
+                                      className={`btn btn-outline btn-sm rx-availability-button ${item.available === true || (item.available === null && isStockSufficient) ? 'rx-choice-selected' : ''}`}
                                       onClick={() => setItemAvail(req.id, med, true)}
                                     >
                                       Available
                                     </button>
                                     <button
-                                      className="btn btn-outline btn-sm"
-                                      style={{ background: item.available === false ? 'var(--error)' : '', color: item.available === false ? '#fff' : '' }}
+                                      className={`btn btn-outline btn-sm rx-availability-button ${item.available === false ? 'rx-choice-selected' : ''}`}
                                       onClick={() => setItemAvail(req.id, med, false)}
                                     >
                                       Out
                                     </button>
                                   </div>
                                 ) : (
-                                  <span className={`chip ${item.available !== false ? 'chip-in-stock' : 'chip-out-stock'}`}>
+                                  <span className={`chip rx-status ${item.available !== false ? 'chip-in-stock' : 'chip-out-stock'}`}>
                                     {item.available !== false ? 'In Stock' : 'Out of Stock'}
                                   </span>
                                 )}
@@ -1066,7 +1064,7 @@ export default function App({ user, onLogout }) {
                               Partial Hold
                             </button>
                             <button
-                              className="btn btn-danger btn-sm"
+                                    className="btn btn-outline btn-sm rx-unavailable-button"
                               onClick={() => respondRx(req.id, 'unavailable')}
                             >
                               Unavailable
@@ -1119,7 +1117,7 @@ export default function App({ user, onLogout }) {
 
               {!filteredPrescriptions.length && (
                 <div className="table-card" style={{ padding: 48, textAlign: 'center', marginTop: 16 }}>
-                  <span className="material-symbols-outlined" style={{ fontSize: 48, color: 'var(--primary)', marginBottom: 12 }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 48, color: 'var(--tertiary)', marginBottom: 12 }}>
                     receipt_long
                   </span>
                   <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--on-background)', marginBottom: 6 }}>
@@ -1240,7 +1238,7 @@ export default function App({ user, onLogout }) {
                               <button
                                 type="button"
                                 className="btn btn-outline btn-sm"
-                                onClick={() => setMapModalTarget({ id: r.requestId || r.rxId || r.id, code: r.prescriptionCode || r.token })}
+                                onClick={() => setMapModalTarget({ id: r.requestId || r.rxId || r.prescriptionId || r.id, code: r.prescriptionCode || r.token })}
                                 title="View patient & fulfillment location on interactive map"
                                 style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
                               >
@@ -1248,7 +1246,7 @@ export default function App({ user, onLogout }) {
                                 Map
                               </button>
                               <button
-                                className="btn btn-primary btn-sm"
+                                className="btn btn-primary btn-sm rx-confirm-button"
                                 onClick={() => markPicked(r.reservationId || r.id, token, r.patientName, r.rxId, r.requestId)}
                               >
                                 <span className="material-symbols-outlined" style={{ fontSize: 16 }}>vaccines</span>
@@ -1337,8 +1335,8 @@ export default function App({ user, onLogout }) {
                             <span className="chip chip-in-stock">Active 4h Hold</span>
                           </td>
                           <td style={{ textAlign: 'right' }}>
-                            <button
-                              className="btn btn-primary btn-sm"
+                                  <button
+                                    className="btn btn-primary btn-sm rx-confirm-button"
                               onClick={() => markPicked(r.id, token, r.patientName)}
                             >
                               Verify & Dispense
