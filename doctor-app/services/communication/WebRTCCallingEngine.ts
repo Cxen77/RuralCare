@@ -444,8 +444,11 @@ export class WebRTCCallingEngine {
           const SessionDescription = NativeWebRTC?.RTCSessionDescription || (globalThis as any).RTCSessionDescription;
           await this.pc.setRemoteDescription(new SessionDescription({ type: 'offer', sdp: signal.sdp }));
 
-          for (const c of this.pendingIceCandidates) {
-            await this.pc.addIceCandidate(new (RTCIceCandidate as any)(c));
+          const IceCandidate = NativeWebRTC?.RTCIceCandidate || (globalThis as any).RTCIceCandidate;
+          if (IceCandidate) {
+            for (const c of this.pendingIceCandidates) {
+              await this.pc.addIceCandidate(new IceCandidate(c));
+            }
           }
           this.pendingIceCandidates = [];
 
@@ -462,9 +465,13 @@ export class WebRTCCallingEngine {
         }
       } else if (signal.type === 'answer') {
         if (this.pc) {
-          await this.pc.setRemoteDescription(new (RTCSessionDescription as any)({ type: 'answer', sdp: signal.sdp }));
-          for (const c of this.pendingIceCandidates) {
-            await this.pc.addIceCandidate(new (RTCIceCandidate as any)(c));
+          const SessionDescription = NativeWebRTC?.RTCSessionDescription || (globalThis as any).RTCSessionDescription;
+          await this.pc.setRemoteDescription(new SessionDescription({ type: 'answer', sdp: signal.sdp }));
+          const IceCandidate = NativeWebRTC?.RTCIceCandidate || (globalThis as any).RTCIceCandidate;
+          if (IceCandidate) {
+            for (const c of this.pendingIceCandidates) {
+              await this.pc.addIceCandidate(new IceCandidate(c));
+            }
           }
           this.pendingIceCandidates = [];
         }
@@ -541,8 +548,9 @@ export class WebRTCCallingEngine {
         const state = this.pc?.connectionState;
         if (state === 'connected') {
           this.markConnected();
-        } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-          if (this.currentCall && this.currentCall.status === 'connected') {
+        } else if (state === 'failed' || state === 'closed') {
+          if (this.currentCall) {
+            this.emit('error', { error: 'The call connection failed.' });
             this.endCall();
           }
         }
@@ -552,6 +560,9 @@ export class WebRTCCallingEngine {
         const state = this.pc?.iceConnectionState;
         if (state === 'connected' || state === 'completed') {
           this.markConnected();
+        } else if (state === 'failed' && this.currentCall) {
+          this.emit('error', { error: 'ICE connection failed.' });
+          this.endCall();
         }
       };
     } catch (e) {
