@@ -6,9 +6,9 @@ const MAP_STYLE = `https://maps.geoapify.com/v1/styles/osm-bright-grey/style.jso
 const FALLBACK_STYLE = 'https://demotiles.maplibre.org/style.json';
 
 const DEFAULT_COORDS = {
-  latitude: 25.9870,
-  longitude: 85.2290,
-  address: 'Main Road, Ramnagar, Vaishali, Bihar'
+  latitude: 25.9890,
+  longitude: 85.2310,
+  address: 'Station Road, Ramnagar, Vaishali, Bihar'
 };
 
 function isValidCoordinate(lat, lng) {
@@ -25,10 +25,11 @@ function isValidCoordinate(lat, lng) {
   );
 }
 
-export default function PharmacyLocationPickerModal({
+export default function HospitalLocationPickerModal({
   isOpen,
   onClose,
   initialLocation,
+  hospitalId,
   onLocationSaved,
 }) {
   const initLat = isValidCoordinate(initialLocation?.latitude, initialLocation?.longitude)
@@ -100,91 +101,98 @@ export default function PharmacyLocationPickerModal({
         `https://api.geoapify.com/v1/geocode/reverse?lat=${lat}&lon=${lng}&apiKey=${GEOAPIFY_KEY}`,
         { signal: controller.signal }
       );
-      if (res.ok) {
-        const json = await res.json();
-        const feat = json?.features?.[0]?.properties;
-        if (feat) {
-          const resolved =
-            feat.formatted ||
-            [feat.address_line1, feat.city || feat.county, feat.state].filter(Boolean).join(', ');
-          if (resolved) {
-            setAddress(resolved);
-          }
+      if (!res.ok) throw new Error('Geocoding service unavailable');
+      const data = await res.json();
+      const feature = data.features?.[0];
+      if (feature) {
+        const p = feature.properties || {};
+        const formatted =
+          p.formatted ||
+          [p.address_line1, p.address_line2, p.city || p.county, p.state, p.postcode]
+            .filter(Boolean)
+            .join(', ');
+        if (formatted) {
+          setAddress(formatted);
         }
       }
     } catch (err) {
       if (err.name !== 'AbortError') {
-        console.warn('Reverse geocode error:', err);
+        console.warn('[HOSPITAL GEO] Reverse geocode failed:', err);
       }
     } finally {
       setResolvingAddress(false);
     }
   }, []);
 
-  // Update pin position and pan map
-  const updatePosition = useCallback((newLat, newLng, triggerReverse = true) => {
+  // Update position helper
+  const updatePosition = useCallback((newLat, newLng, shouldReverse = true) => {
     setLatitude(newLat);
     setLongitude(newLng);
+    setErrorNotice(null);
 
     if (markerRef.current) {
       markerRef.current.setLngLat([newLng, newLat]);
     }
     if (mapInstanceRef.current) {
-      mapInstanceRef.current.easeTo({ center: [newLng, newLat], zoom: 15 });
+      mapInstanceRef.current.easeTo({ center: [newLng, newLat], duration: 400 });
     }
 
-    if (triggerReverse) {
+    if (shouldReverse) {
       if (reverseTimeoutRef.current) clearTimeout(reverseTimeoutRef.current);
       reverseTimeoutRef.current = setTimeout(() => {
         reverseGeocode(newLat, newLng);
-      }, 400);
+      }, 350);
     }
   }, [reverseGeocode]);
 
-  // Search Address Autocomplete
-  const handleSearchChange = (val) => {
+  // Handle autocomplete input change with debouncing
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
     setSearchQuery(val);
+    setErrorNotice(null);
+
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
 
-    if (!val || val.trim().length < 3) {
+    if (!val.trim() || val.trim().length < 2) {
       setSuggestions([]);
-      setSearching(false);
       return;
     }
 
-    setSearching(true);
     searchTimeoutRef.current = setTimeout(async () => {
+      setSearching(true);
       try {
+        const bias = `&bias=proximity:${longitude},${latitude}`;
         const res = await fetch(
-          `https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(val)}&apiKey=${GEOAPIFY_KEY}&limit=5`
+          `https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(val)}&filter=countrycode:in${bias}&limit=5&apiKey=${GEOAPIFY_KEY}`
         );
-        if (res.ok) {
-          const data = await res.json();
-          setSuggestions(data.features || []);
-        }
+        if (!res.ok) throw new Error('Search failed');
+        const data = await res.json();
+        setSuggestions(data.features || []);
       } catch (err) {
-        console.warn('Search autocomplete error:', err);
+        console.warn('[HOSPITAL GEO] Autocomplete search failed:', err);
+        setSuggestions([]);
       } finally {
         setSearching(false);
       }
-    }, 350);
+    }, 300);
   };
 
   // Select autocomplete suggestion
   const handleSelectSuggestion = (feature) => {
-    const coords = feature.geometry?.coordinates;
-    if (coords && coords.length >= 2) {
-      const [lng, lat] = coords;
-      const formatted = feature.properties?.formatted || feature.properties?.name || searchQuery;
-      setAddress(formatted);
-      setSearchQuery('');
-      setSuggestions([]);
-      updatePosition(lat, lng, false);
-    }
+    const [sLng, sLat] = feature.geometry.coordinates;
+    const p = feature.properties || {};
+    const formatted =
+      p.formatted ||
+      [p.address_line1, p.address_line2, p.city, p.state, p.postcode].filter(Boolean).join(', ');
+
+    setSuggestions([]);
+    setSearchQuery('');
+    setAddress(formatted);
+    updatePosition(sLat, sLng, false);
   };
 
-  // GPS "Use Current Location"
-  const handleGpsLocation = () => {
+  // Use browser GPS
+  const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
       setErrorNotice('Geolocation is not supported by your browser.');
       return;
@@ -194,19 +202,19 @@ export default function PharmacyLocationPickerModal({
     setErrorNotice(null);
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude: curLat, longitude: curLng } = position.coords;
+      (pos) => {
         setLoadingGps(false);
-        updatePosition(curLat, curLng, true);
+        const { latitude: gpsLat, longitude: gpsLng } = pos.coords;
+        updatePosition(gpsLat, gpsLng, true);
       },
-      (error) => {
+      (err) => {
         setLoadingGps(false);
-        console.warn('GPS error:', error);
-        setErrorNotice(
-          error.code === 1
-            ? 'Location permission denied. Please allow location access in your browser or search for your address.'
-            : 'Unable to retrieve your current location. Please search or pick on map.'
-        );
+        console.warn('[HOSPITAL GEO] GPS error:', err);
+        let msg = 'Could not get your location. Please select on the map or search.';
+        if (err.code === 1) msg = 'Location permission denied. Please click on the map to set location.';
+        else if (err.code === 2) msg = 'Location unavailable. Please select manually on the map.';
+        else if (err.code === 3) msg = 'Location request timed out. Please try again or click the map.';
+        setErrorNotice(msg);
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
@@ -227,12 +235,14 @@ export default function PharmacyLocationPickerModal({
 
     try {
       const payload = {
+        hospitalId: hospitalId || 'hosp-601',
         latitude: Number(numLat.toFixed(6)),
         longitude: Number(numLng.toFixed(6)),
-        address: (address || '').trim() || 'Pharmacy Location',
+        address: (address || '').trim() || 'Hospital Command Center',
       };
 
-      const res = await api.put('/pharmacy/location', payload);
+      const saveFn = api.put ? api.put.bind(api) : (api.patch ? api.patch.bind(api) : api.post.bind(api));
+      const res = await saveFn('/hospitals/location', payload);
 
       setSaving(false);
       const saved = {
@@ -254,8 +264,8 @@ export default function PharmacyLocationPickerModal({
       onClose();
     } catch (err) {
       setSaving(false);
-      console.error('[PHARMACY LOCATION] Location confirmation failed:', err);
-      setErrorNotice(err?.message || 'Unable to save location. Please try again.');
+      console.error('[HOSPITAL LOCATION] Location update failed:', err);
+      setErrorNotice(err?.message || 'Unable to save hospital location. Please try again.');
     }
   };
 
@@ -299,21 +309,21 @@ export default function PharmacyLocationPickerModal({
       }
     });
 
-    // Create custom draggable emerald pharmacy pin
+    // Create custom draggable teal/emerald hospital pin
     const el = document.createElement('div');
     el.className = 'location-picker-custom-pin';
-    el.style.width = '36px';
-    el.style.height = '36px';
+    el.style.width = '38px';
+    el.style.height = '38px';
     el.style.borderRadius = '50%';
-    el.style.background = '#00646f';
+    el.style.background = '#00685f';
     el.style.border = '3px solid #ffffff';
-    el.style.boxShadow = '0 3px 12px rgba(0, 100, 111, 0.45)';
+    el.style.boxShadow = '0 3px 14px rgba(0, 104, 95, 0.5)';
     el.style.display = 'flex';
     el.style.alignItems = 'center';
     el.style.justifyContent = 'center';
     el.style.color = '#ffffff';
     el.style.cursor = 'grab';
-    el.innerHTML = '<span class="material-symbols-outlined" style="font-size:20px;">local_pharmacy</span>';
+    el.innerHTML = '<span class="material-symbols-outlined" style="font-size:22px;">local_hospital</span>';
 
     const marker = new maplibregl.Marker({ element: el, draggable: true })
       .setLngLat([startLng, startLat])
@@ -364,7 +374,7 @@ export default function PharmacyLocationPickerModal({
         <div
           style={{
             padding: '14px 20px',
-            background: 'var(--surface-container-lowest)',
+            background: 'var(--surface-white)',
             borderBottom: '1px solid var(--outline-variant)',
             display: 'flex',
             alignItems: 'center',
@@ -379,7 +389,7 @@ export default function PharmacyLocationPickerModal({
                 width: 38,
                 height: 38,
                 borderRadius: 10,
-                background: 'rgba(0, 100, 111, 0.12)',
+                background: 'rgba(0, 104, 95, 0.12)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -393,10 +403,10 @@ export default function PharmacyLocationPickerModal({
             </div>
             <div>
               <h2 style={{ fontSize: 15.5, fontWeight: 700, margin: 0, color: 'var(--on-surface)' }}>
-                Update Pharmacy Location
+                Update Hospital Command Location
               </h2>
               <p style={{ fontSize: 11.5, margin: 0, color: 'var(--on-surface-variant)' }}>
-                Set your exact pharmacy storefront coordinates for accurate patient routing and distance calculation
+                Set exact hospital coordinates so patients and 108 ambulances see your facility on their live map
               </p>
             </div>
           </div>
@@ -417,7 +427,7 @@ export default function PharmacyLocationPickerModal({
                 fontSize: 13,
                 fontWeight: 700,
                 borderRadius: 8,
-                boxShadow: '0 2px 8px rgba(0, 100, 111, 0.35)',
+                boxShadow: '0 2px 8px rgba(0, 104, 95, 0.35)',
               }}
             >
               {saving ? (
@@ -452,8 +462,8 @@ export default function PharmacyLocationPickerModal({
         {/* Search & Actions Bar */}
         <div
           style={{
-            padding: '12px 22px',
-            background: 'var(--surface-container-low)',
+            padding: '10px 20px',
+            background: 'var(--surface-dim)',
             borderBottom: '1px solid var(--outline-variant)',
             display: 'flex',
             gap: 10,
@@ -486,11 +496,11 @@ export default function PharmacyLocationPickerModal({
                 borderRadius: 8,
                 fontSize: 13,
                 border: '1px solid var(--outline-variant)',
-                background: 'var(--surface-container-lowest)',
+                background: '#ffffff',
               }}
-              placeholder="Search address, landmark, village, or pincode..."
+              placeholder="Search hospital address, landmark, town, or pincode..."
               value={searchQuery}
-              onChange={(e) => handleSearchChange(e.target.value)}
+              onChange={handleSearchChange}
             />
             {searching && (
               <span
@@ -509,139 +519,182 @@ export default function PharmacyLocationPickerModal({
               </span>
             )}
 
-            {/* Autocomplete Suggestions Dropdown */}
+            {/* Suggestions Dropdown */}
             {suggestions.length > 0 && (
               <div
                 style={{
                   position: 'absolute',
-                  top: '100%',
+                  top: 'calc(100% + 4px)',
                   left: 0,
                   right: 0,
                   background: '#ffffff',
                   border: '1px solid var(--outline-variant)',
                   borderRadius: 8,
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.14)',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
                   zIndex: 200,
-                  marginTop: 4,
-                  maxHeight: 220,
-                  overflowY: 'auto',
+                  overflow: 'hidden',
                 }}
               >
-                {suggestions.map((item, idx) => (
+                {suggestions.map((s, idx) => (
                   <div
-                    key={idx}
-                    onClick={() => handleSelectSuggestion(item)}
+                    key={s.properties?.place_id || idx}
+                    onClick={() => handleSelectSuggestion(s)}
                     style={{
-                      padding: '8px 12px',
-                      fontSize: 12.5,
-                      borderBottom: idx < suggestions.length - 1 ? '1px solid #f0f0f0' : 'none',
+                      padding: '10px 14px',
+                      fontSize: 13,
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       gap: 8,
+                      borderBottom: idx < suggestions.length - 1 ? '1px solid var(--outline-variant)' : 'none',
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = '#f5fbfb')}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-dim)')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = '#ffffff')}
                   >
-                    <span
-                      className="material-symbols-outlined"
-                      style={{ fontSize: 16, color: 'var(--primary)' }}
-                    >
+                    <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--primary)' }}>
                       location_on
                     </span>
-                    <span style={{ flex: 1 }}>{item.properties?.formatted}</span>
+                    <span style={{ color: 'var(--on-surface)' }}>{s.properties?.formatted}</span>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* GPS Location Button */}
           <button
             type="button"
-            className="btn btn-outline"
-            onClick={handleGpsLocation}
+            className="btn btn-outline btn-sm"
+            onClick={handleUseCurrentLocation}
             disabled={loadingGps}
+            title="Use current GPS device coordinates"
             style={{
-              height: 38,
-              padding: '0 14px',
-              fontSize: 12.5,
-              fontWeight: 600,
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
               whiteSpace: 'nowrap',
-              borderRadius: 8,
-              borderColor: 'var(--primary)',
-              color: 'var(--primary)',
+              height: 38,
             }}
           >
             <span
               className="material-symbols-outlined"
               style={{
-                fontSize: 17,
+                fontSize: 16,
                 animation: loadingGps ? 'spin 1s linear infinite' : 'none',
               }}
             >
               {loadingGps ? 'progress_activity' : 'my_location'}
             </span>
-            <span>{loadingGps ? 'Detecting GPS...' : 'Use My GPS'}</span>
+            {loadingGps ? 'Locating…' : 'Use Current GPS'}
           </button>
         </div>
 
-        {/* Notice/Alert */}
-        {errorNotice && (
-          <div
-            style={{
-              padding: '8px 20px',
-              background: 'var(--error-container)',
-              color: 'var(--on-error-container)',
-              fontSize: 12,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-            }}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>warning</span>
-            <span>{errorNotice}</span>
-          </div>
-        )}
+        {/* Quick Regional Presets */}
+        <div
+          style={{
+            padding: '8px 22px',
+            background: 'var(--surface-white)',
+            borderBottom: '1px solid var(--outline-variant)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            overflowX: 'auto',
+          }}
+        >
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--on-surface-variant)', textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap' }}>
+            Hospital Presets:
+          </span>
+          {[
+            { label: 'Ramnagar CHC', lat: 25.9890, lng: 85.2310, addr: 'Station Road, Ramnagar, Vaishali, Bihar' },
+            { label: 'District Civil Hospital Hajipur', lat: 25.6858, lng: 85.2146, addr: 'Civil Lines, Hajipur, Vaishali, Bihar' },
+            { label: 'Vaishali Sub-District Hospital', lat: 25.9912, lng: 85.1278, addr: 'Near Bus Stand, Vaishali, Bihar' },
+            { label: 'Lalganj Referral Hospital', lat: 25.8672, lng: 85.1764, addr: 'Main Chowk, Lalganj, Vaishali, Bihar' },
+          ].map((preset) => (
+            <button
+              key={preset.label}
+              type="button"
+              className="tag-preset-pill"
+              onClick={() => {
+                setAddress(preset.addr);
+                updatePosition(preset.lat, preset.lng, false);
+              }}
+              style={{
+                fontSize: 11.5,
+                padding: '3px 10px',
+                borderRadius: 20,
+                border: '1px solid var(--outline-variant)',
+                background: 'var(--surface-dim)',
+                color: 'var(--on-surface)',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
 
-        {/* Map Container */}
-        <div style={{ position: 'relative', height: 260, minHeight: 220, flex: 1, width: '100%', background: '#eaeaea' }}>
-          <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
+        {/* Map Canvas Container */}
+        <div style={{ position: 'relative', flex: 1, minHeight: 220, height: 260, background: '#e2e8f0' }}>
+          <div ref={mapContainerRef} style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }} />
 
-          {/* Map Guidance Overlay */}
+          {/* Floating Instruction Banner */}
           <div
             style={{
               position: 'absolute',
-              bottom: 12,
-              left: 12,
-              background: 'rgba(255, 255, 255, 0.92)',
-              backdropFilter: 'blur(6px)',
-              padding: '5px 12px',
-              borderRadius: 20,
-              fontSize: 11,
+              top: 12,
+              left: 14,
+              padding: '6px 12px',
+              borderRadius: 8,
+              background: 'rgba(255, 255, 255, 0.94)',
+              backdropFilter: 'blur(4px)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+              fontSize: 11.5,
               fontWeight: 600,
-              color: 'var(--on-surface-variant)',
+              color: 'var(--on-surface)',
               display: 'flex',
               alignItems: 'center',
-              gap: 5,
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+              gap: 6,
+              zIndex: 10,
+              pointerEvents: 'none',
             }}
           >
-            <span className="material-symbols-outlined" style={{ fontSize: 15, color: 'var(--primary)' }}>
+            <span className="material-symbols-outlined fill" style={{ fontSize: 15, color: 'var(--primary)' }}>
               touch_app
             </span>
-            <span>Click map or drag the emerald pin to position your storefront</span>
+            Click map or drag the hospital pin to set exact coordinates
           </div>
+
+          {errorNotice && (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: 12,
+                left: 14,
+                right: 14,
+                padding: '8px 14px',
+                borderRadius: 8,
+                background: 'rgba(254, 226, 226, 0.96)',
+                border: '1px solid #f87171',
+                color: '#991b1b',
+                fontSize: 12,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                zIndex: 10,
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>warning</span>
+              {errorNotice}
+            </div>
+          )}
         </div>
 
-        {/* Location Form & Coordinate Review */}
+        {/* Bottom Coordinates & Address Confirmation Section */}
         <div
           style={{
             padding: '10px 20px',
-            background: 'var(--surface-container-lowest)',
+            background: 'var(--surface-white)',
             borderTop: '1px solid var(--outline-variant)',
             flexShrink: 0,
           }}
@@ -653,7 +706,7 @@ export default function PharmacyLocationPickerModal({
                 flex: 1,
                 padding: '6px 12px',
                 borderRadius: 8,
-                background: 'var(--surface-container-low)',
+                background: 'var(--surface-dim)',
                 border: '1px solid var(--outline-variant)',
                 display: 'flex',
                 alignItems: 'center',
@@ -673,7 +726,7 @@ export default function PharmacyLocationPickerModal({
                 flex: 1,
                 padding: '6px 12px',
                 borderRadius: 8,
-                background: 'var(--surface-container-low)',
+                background: 'var(--surface-dim)',
                 border: '1px solid var(--outline-variant)',
                 display: 'flex',
                 alignItems: 'center',
@@ -692,7 +745,7 @@ export default function PharmacyLocationPickerModal({
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--on-surface-variant)' }}>
-                CONFIRMED PHARMACY ADDRESS
+                CONFIRMED HOSPITAL ADDRESS
               </label>
               {resolvingAddress && (
                 <span style={{ fontSize: 11, color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -715,7 +768,7 @@ export default function PharmacyLocationPickerModal({
               }}
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="e.g. Shop #4, Main Bazar Road, Ramnagar, Vaishali, Bihar"
+              placeholder="e.g. Station Road, Near Block Development Office, Ramnagar, Vaishali, Bihar"
             />
           </div>
         </div>
@@ -724,7 +777,7 @@ export default function PharmacyLocationPickerModal({
         <div
           style={{
             padding: '12px 20px',
-            background: 'var(--surface-container-low)',
+            background: 'var(--surface-dim)',
             borderTop: '1px solid var(--outline-variant)',
             display: 'flex',
             justifyContent: 'flex-end',
@@ -749,7 +802,7 @@ export default function PharmacyLocationPickerModal({
               padding: '9px 22px',
               fontWeight: 700,
               fontSize: 13.5,
-              boxShadow: '0 3px 12px rgba(0, 100, 111, 0.35)',
+              boxShadow: '0 3px 12px rgba(0, 104, 95, 0.35)',
             }}
           >
             {saving ? (

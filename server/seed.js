@@ -45,7 +45,8 @@ const pharmacies = [
 
 const hospitals = [
   {
-    id: 'hosp-601', name: 'Ramnagar Community Health Center', type: 'CHC', address: 'Station Road, Ramnagar',
+    id: 'hosp-601', name: 'Ramnagar Community Health Center', type: 'CHC', address: 'Station Road, Ramnagar, Vaishali, Bihar',
+    latitude: 25.9890, longitude: 85.2310,
     distanceKm: 2.5, phone: '+91 6112 223344', rating: 4.2,
     capabilities: { generalBeds: 14, emergency: 6, icuBeds: 2, hasXray: true, hasUltrasound: true, hasPathology: true, specialties: ['General Medicine'], ambulanceCount: 3 },
     beds: { general: 14, icu: 2, emergency: 6, ventilator: 1 },
@@ -54,7 +55,8 @@ const hospitals = [
     departments: ['General Medicine', 'Emergency', 'Obstetrics'],
   },
   {
-    id: 'hosp-602', name: 'District Civil Hospital', type: 'District', address: 'Civil Lines, Hajipur',
+    id: 'hosp-602', name: 'District Civil Hospital', type: 'District', address: 'Civil Lines, Hajipur, Vaishali, Bihar',
+    latitude: 25.6858, longitude: 85.2146,
     distanceKm: 9.8, phone: '+91 6112 556677', rating: 4.5,
     capabilities: { generalBeds: 38, emergency: 10, icuBeds: 7, hasCtScan: true, hasMri: true, hasXray: true, hasBloodBank: true, specialties: ['Cardiology', 'General Surgery'], ambulanceCount: 1 },
     beds: { general: 38, icu: 7, emergency: 10, ventilator: 4 },
@@ -204,12 +206,21 @@ async function reconcile() {
   }
 
   const hosp601 = await Hospital.findOne({ id: 'hosp-601' });
-  if (hosp601 && hosp601.name !== 'Ramnagar Community Health Center') {
+  if (hosp601 && (!hosp601.latitude || !hosp601.longitude || hosp601.name !== 'Ramnagar Community Health Center')) {
     await Hospital.updateOne(
       { id: 'hosp-601' },
-      { $set: { name: 'Ramnagar Community Health Center' } }
+      { $set: { name: 'Ramnagar Community Health Center', latitude: 25.9890, longitude: 85.2310, address: 'Station Road, Ramnagar, Vaishali, Bihar' } }
     );
-    fixes.push('hosp-601: verified Ramnagar Community Health Center name');
+    fixes.push('hosp-601: verified Ramnagar Community Health Center coordinates and address');
+  }
+
+  const hosp602 = await Hospital.findOne({ id: 'hosp-602' });
+  if (hosp602 && (!hosp602.latitude || !hosp602.longitude)) {
+    await Hospital.updateOne(
+      { id: 'hosp-602' },
+      { $set: { latitude: 25.6858, longitude: 85.2146, address: 'Civil Lines, Hajipur, Vaishali, Bihar' } }
+    );
+    fixes.push('hosp-602: verified District Civil Hospital coordinates');
   }
 
   console.log(fixes.length ? `  repairs           ${fixes.join('; ')}` : '  repairs             none needed');

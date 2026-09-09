@@ -358,6 +358,17 @@ export const MapView: React.FC<MapViewProps> = ({
         return wrap;
       }
 
+      function createHospitalElement(m) {
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'width:34px;height:34px;border-radius:50%;background:#0284c7;border:3px solid #fff;box-shadow:0 3px 10px rgba(2,132,199,0.5);display:flex;align-items:center;justify-content:center;cursor:pointer;';
+        wrap.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M19 3H5c-1.1 0-1.99.9-1.99 2L3 19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-1 11h-4v4h-4v-4H6v-4h4V6h4v4h4v4z"/></svg>';
+        wrap.addEventListener('click', function(e) {
+          e.stopPropagation();
+          notify({ type: 'MARKER_PRESS', id: m.id });
+        });
+        return wrap;
+      }
+
       function syncMarkers(markersList) {
         activeMarkers.forEach(function(m) { m.remove(); });
         activeMarkers = [];
@@ -371,6 +382,8 @@ export const MapView: React.FC<MapViewProps> = ({
             el = createPatientElement();
           } else if (item.type === 'pharmacy') {
             el = createPharmacyElement(item);
+          } else if (item.type === 'hospital') {
+            el = createHospitalElement(item);
           } else {
             el = createDoctorElement(item);
           }

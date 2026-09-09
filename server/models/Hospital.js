@@ -8,6 +8,9 @@ const HospitalSchema = new mongoose.Schema({
   distanceKm: { type: Number },
   phone: { type: String },
   rating: { type: Number },
+  latitude: { type: Number },
+  longitude: { type: Number },
+  locationUpdatedAt: { type: Date },
   capabilities: {
     icuBeds: { type: Number },
     generalBeds: { type: Number },
@@ -28,6 +31,17 @@ const HospitalSchema = new mongoose.Schema({
     emergency: { type: Number, default: 0 },
     ventilator: { type: Number, default: 0 }
   },
+  totalBeds: {
+    general: { type: Number, default: 20 },
+    icu: { type: Number, default: 5 },
+    emergency: { type: Number, default: 10 },
+    ventilator: { type: Number, default: 2 }
+  },
+  acceptingEmergency: { type: Boolean, default: true },
+  emergencyHelpline: { type: String },
+  nodalOfficer: { type: String },
+  contactEmail: { type: String },
+  operatingHours: { type: String, default: '24x7 Emergency & Inpatient Services' },
   blood: { type: mongoose.Schema.Types.Mixed, default: {} },
   diagnostics: [{ type: String }],
   departments: [{ type: String }]

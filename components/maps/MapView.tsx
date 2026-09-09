@@ -78,6 +78,15 @@ const PharmacyPin: React.FC = () => (
   </View>
 );
 
+const HospitalPin: React.FC = () => (
+  <View style={markerStyles.hospitalOuter}>
+    <View style={markerStyles.pharmacyCross}>
+      <View style={markerStyles.pharmacyCrossH} />
+      <View style={markerStyles.pharmacyCrossV} />
+    </View>
+  </View>
+);
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export const MapView: React.FC<MapViewProps> = ({
@@ -204,7 +213,7 @@ export const MapView: React.FC<MapViewProps> = ({
         {/* Doctor markers */}
         {!draggableMarker &&
           markers
-            .filter(m => m.type === 'doctor' || m.type === 'clinic' || m.type === 'hospital')
+            .filter(m => m.type === 'doctor' || m.type === 'clinic')
             .map(marker => (
               <MapLibreGL.MarkerView
                 key={marker.id}
@@ -218,6 +227,27 @@ export const MapView: React.FC<MapViewProps> = ({
                   style={markerStyles.touchable}
                 >
                   <DoctorPin />
+                </View>
+              </MapLibreGL.MarkerView>
+            ))}
+
+        {/* Hospital markers */}
+        {!draggableMarker &&
+          markers
+            .filter(m => m.type === 'hospital')
+            .map(marker => (
+              <MapLibreGL.MarkerView
+                key={marker.id}
+                id={`marker-${marker.id}`}
+                coordinate={[marker.longitude, marker.latitude]}
+                anchor={{ x: 0.5, y: 0.5 }}
+              >
+                <View
+                  onStartShouldSetResponder={() => true}
+                  onResponderRelease={() => onMarkerPress?.(marker.id)}
+                  style={markerStyles.touchable}
+                >
+                  <HospitalPin />
                 </View>
               </MapLibreGL.MarkerView>
             ))}
@@ -483,5 +513,25 @@ const markerStyles = StyleSheet.create({
     height: 12,
     borderRadius: 1.5,
     backgroundColor: '#FFFFFF',
+  },
+  // Hospital pin
+  hospitalOuter: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#0284c7',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      android: { elevation: 6 },
+      ios: {
+        shadowColor: '#0284c7',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.45,
+        shadowRadius: 6,
+      },
+    }),
   },
 });

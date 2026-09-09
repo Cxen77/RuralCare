@@ -27,13 +27,14 @@ You have access to real RuralCare backend tools that query the live database and
 Emergency red flags have already been checked deterministically before this step.
 
 CRITICAL RULES:
-1. NEVER invent or hallucinate doctors, clinics, pharmacies, medicine availability, coordinates, distances, travel times, or prescriptions.
-2. ALWAYS use the provided backend tools when real medical, doctor, clinic, pharmacy, prescription, or route information is needed.
-3. If a patient describes symptoms or asks for care, call findSpecialists or findDoctors directly in your first turn.
-4. If a patient asks about medicines or pharmacies, use findPharmaciesWithMedicines or getPrescription.
-5. Be fast and efficient: call needed tools in parallel on the first turn. As soon as you receive tool data, immediately provide your final clear, reassuring 2-3 sentence answer.
-6. NEVER diagnose definitively and never alter a prescription.
-7. If life-threatening symptoms (chest pain, stroke, breathing failure, severe hemorrhage) are described, advise calling SOS 108 immediately.`;
+1. NEVER invent or hallucinate doctors, clinics, pharmacies, hospitals, bed numbers, blood units, medicine availability, coordinates, distances, travel times, or prescriptions.
+2. ALWAYS use the provided backend tools when real medical, doctor, clinic, pharmacy, hospital, bed availability, blood stock, prescription, or route information is needed.
+3. If a patient asks about nearby hospitals, hospital beds (general, ICU, emergency, ventilator), emergency admission, or hospital blood stock, IMMEDIATELY call findNearbyHospitals or checkHospitalBedAvailability.
+4. If a patient describes symptoms or asks for care, call findSpecialists or findDoctors directly in your first turn.
+5. If a patient asks about medicines or pharmacies, use findPharmaciesWithMedicines or getPrescription.
+6. Be fast and efficient: call needed tools in parallel on the first turn. As soon as you receive tool data, immediately provide your final clear, reassuring answer with the exact bed numbers, hospital names, and contact details from the database.
+7. NEVER diagnose definitively and never alter a prescription.
+8. If life-threatening symptoms (chest pain, stroke, breathing failure, severe hemorrhage) are described, advise calling SOS 108 immediately.`;
 
 class AIAgent {
   /**
@@ -72,6 +73,7 @@ class AIAgent {
         emergencyDetails: emergencyCheck,
         doctors: [],
         pharmacies: [],
+        hospitals: [],
         route: null,
         conversationId: convId
       };
@@ -130,18 +132,26 @@ class AIAgent {
       'findPharmaciesWithMedicines',
       'calculateRoute',
       'createAppointment',
-      'getPrescription'
+      'getPrescription',
+      'findNearbyHospitals',
+      'checkHospitalBedAvailability',
+      'checkEmergencyHospitalStatus',
+      'checkHospitalBloodStock'
     ]);
 
     const tools = ToolRegistry.getOpenAIToolDefinitions().filter(t => CORE_TOOL_NAMES.has(t.function?.name));
     let systemPrompt = SYSTEM_PROMPT;
     if (context.location?.latitude && context.location?.longitude) {
-      systemPrompt += `\nPATIENT LOCATION: Latitude ${context.location.latitude}, Longitude ${context.location.longitude}. Use these coordinates directly for doctor, clinic, and pharmacy proximity searches.`;
+      systemPrompt += `\nPATIENT LOCATION: Latitude ${context.location.latitude}, Longitude ${context.location.longitude}. Use these coordinates directly for doctor, clinic, hospital, bed, and pharmacy proximity searches.`;
     }
 
     const collectedData = {
       doctors: [],
       pharmacies: [],
+      hospitals: [],
+      hospitalReports: [],
+      hospitalEmergency: null,
+      hospitalBloodStock: null,
       route: null,
       specialty: null,
       urgency: 'routine',
@@ -217,7 +227,7 @@ class AIAgent {
       }
     }
 
-    if (!finalAnswer && collectedData.doctors.length === 0 && collectedData.pharmacies.length === 0 && !collectedData.specialty) {
+    if (!finalAnswer && collectedData.doctors.length === 0 && collectedData.pharmacies.length === 0 && collectedData.hospitals.length === 0 && collectedData.hospitalReports.length === 0 && !collectedData.specialty) {
       console.warn('[AIAgent] AI providers produced no clinical data. Running deterministic fallback.');
       return this.runDeterministicFallback(trimmedMessage, convId, context);
     }
@@ -237,6 +247,7 @@ class AIAgent {
       requiresUrgentCare: collectedData.requiresUrgentCare,
       doctors: collectedData.doctors,
       pharmacies: collectedData.pharmacies,
+      hospitals: collectedData.hospitals,
       route: collectedData.route,
       confirmationNeeded: collectedData.confirmationNeeded,
       conversationId: convId,
@@ -338,6 +349,32 @@ class AIAgent {
         message: result.message,
         details: result.appointmentDetails
       };
+    } else if (toolName === 'findNearbyHospitals') {
+      if (Array.isArray(result?.hospitals)) {
+        collectedData.hospitals = result.hospitals;
+      }
+    } else if (toolName === 'checkHospitalBedAvailability') {
+      if (Array.isArray(result?.reports)) {
+        collectedData.hospitalReports = result.reports;
+        if (!collectedData.hospitals.length) {
+          collectedData.hospitals = result.reports.map(r => ({
+            id: r.hospitalId,
+            name: r.name,
+            address: r.address,
+            phone: r.phone,
+            availableBeds: r.bedsAvailable,
+            totalCapacity: r.totalCapacity,
+            acceptingEmergency: r.acceptingEmergency
+          }));
+        }
+      }
+    } else if (toolName === 'checkEmergencyHospitalStatus') {
+      collectedData.hospitalEmergency = result;
+      if (Array.isArray(result?.facilities) && !collectedData.hospitals.length) {
+        collectedData.hospitals = result.facilities;
+      }
+    } else if (toolName === 'checkHospitalBloodStock') {
+      collectedData.hospitalBloodStock = result;
     }
   }
 
@@ -345,6 +382,9 @@ class AIAgent {
     if (collectedData.requiresUrgentCare) return 'emergency';
     if (collectedData.confirmationNeeded) return 'appointment_confirmation';
     if (collectedData.route) return 'route';
+    if (collectedData.hospitalReports?.length > 0 || collectedData.hospitals?.length > 0 || collectedData.hospitalEmergency || collectedData.hospitalBloodStock) {
+      return 'hospital_inquiry';
+    }
     if (collectedData.pharmacies.length > 0) return 'pharmacy_search';
     if (collectedData.doctors.length > 0) return 'doctor_search';
     if (collectedData.specialty) return 'symptom_assessment';
@@ -352,6 +392,16 @@ class AIAgent {
   }
 
   static generateSummaryFromData(data, userInput) {
+    if (data.hospitalReports?.length > 0) {
+      const topHosp = data.hospitalReports[0];
+      const beds = topHosp.bedsAvailable || topHosp.beds || {};
+      return `At **${topHosp.name}**, there are currently **${beds.general ?? 0}** general beds, **${beds.emergency ?? 0}** emergency beds, **${beds.icu ?? 0}** ICU beds, and **${beds.ventilator ?? 0}** ventilator beds available. Contact: ${topHosp.phone || '108'}.`;
+    }
+    if (data.hospitals?.length > 0) {
+      const topHosp = data.hospitals[0];
+      const beds = topHosp.availableBeds || {};
+      return `At **${topHosp.name}**, there are **${beds.general ?? 0}** general beds, **${beds.emergency ?? 0}** emergency beds, and **${beds.icu ?? 0}** ICU beds available${topHosp.distanceKm ? ` (${topHosp.distanceKm} km away)` : ''}. Helpline: ${topHosp.emergencyHelpline || topHosp.phone || '108'}.`;
+    }
     if (data.doctors.length > 0) {
       const topDoc = data.doctors[0];
       return `Based on your symptoms, a consultation with a **${data.specialty || topDoc.specialty}** specialist is recommended. I found **${topDoc.name}** at ${topDoc.clinic || 'PHC'}${topDoc.distanceKm ? ` (${topDoc.distanceKm} km away)` : ''}.`;
@@ -363,13 +413,51 @@ class AIAgent {
     if (data.route) {
       return `The route is approximately ${data.route.distanceKm} km and takes about ${data.route.durationMinutes} minutes.`;
     }
-    return 'Thank you for your message. Please share more details so I can assist you with clinical triage or finding doctors and pharmacies.';
+    return 'Thank you for your message. Please share more details so I can assist you with clinical triage or finding doctors, hospitals, and pharmacies.';
   }
 
   /**
    * Deterministic Fallback when external AI providers are offline or not configured.
    */
   static async runDeterministicFallback(userInput, convId, context) {
+    const lower = (userInput || '').toLowerCase();
+    const isHospitalOrBedQuery = /hospital|bed|beds|icu|ventilator|admit|ward|chc|phc|trauma|emergency bay/i.test(lower);
+
+    if (isHospitalOrBedQuery) {
+      const bedReport = await ToolRegistry.executeTool('checkHospitalBedAvailability', {}, context);
+      const hospitalList = await ToolRegistry.executeTool('findNearbyHospitals', {
+        latitude: context?.location?.latitude,
+        longitude: context?.location?.longitude
+      }, context);
+
+      const top = bedReport?.reports?.[0] || hospitalList?.hospitals?.[0];
+      let msg = 'I checked our live hospital network database:';
+      if (top) {
+        const b = top.bedsAvailable || top.beds || top.availableBeds || {};
+        msg = `Currently at **${top.name}**, there are **${b.general ?? 0}** General beds, **${b.emergency ?? 0}** Emergency beds, **${b.icu ?? 0}** ICU beds, and **${b.ventilator ?? 0}** Ventilator beds available. Contact: ${top.phone || '108'}.`;
+      } else {
+        msg = 'No hospital bed records were found in the database.';
+      }
+
+      const fallbackResult = {
+        message: msg,
+        intent: 'hospital_inquiry',
+        specialty: 'Emergency / Inpatient Care',
+        urgency: 'routine',
+        requiresUrgentCare: false,
+        hospitals: hospitalList?.hospitals || (top ? [top] : []),
+        doctors: [],
+        pharmacies: [],
+        route: null,
+        conversationId: convId,
+        source: 'deterministic_fallback'
+      };
+      this.persistConversation(convId, context.patientId, userInput, fallbackResult).catch(err => {
+        console.warn('[AIAgent] Deterministic fallback persist warning:', err.message);
+      });
+      return fallbackResult;
+    }
+
     const spec = await ToolRegistry.executeTool('recommendSpecialty', { symptoms: userInput }, context);
     const docs = await ToolRegistry.executeTool('findDoctors', { specialty: spec.specialty }, context);
 

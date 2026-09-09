@@ -59,13 +59,10 @@ const emergencyTools = {
             urgentFacility: emergencyHospital ? {
               name: emergencyHospital.name,
               address: emergencyHospital.address,
-              phone: emergencyHospital.phone || '108',
-              emergencyBeds: emergencyHospital.beds?.emergency || 10
-            } : {
-              name: 'Nearest District Hospital Emergency Ward',
-              address: 'Local Sub-Division HQ',
-              phone: '108'
-            },
+              phone: emergencyHospital.emergencyHelpline || emergencyHospital.phone || '108',
+              emergencyBeds: emergencyHospital.beds?.emergency ?? 0,
+              acceptingEmergency: emergencyHospital.acceptingEmergency !== false
+            } : null,
             advisory: '🚨 CRITICAL MEDICAL ALERT: Do NOT wait for a routine clinic appointment. Press the red SOS Ambulance button or call 108 immediately.'
           };
         }

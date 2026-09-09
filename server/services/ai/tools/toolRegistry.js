@@ -17,6 +17,7 @@ const pharmacyTools = require('./pharmacyTools');
 const prescriptionTools = require('./prescriptionTools');
 const appointmentTools = require('./appointmentTools');
 const emergencyTools = require('./emergencyTools');
+const hospitalTools = require('./hospitalTools');
 
 const ALL_TOOLS = {
   ...patientTools,
@@ -27,7 +28,8 @@ const ALL_TOOLS = {
   ...pharmacyTools,
   ...prescriptionTools,
   ...appointmentTools,
-  ...emergencyTools
+  ...emergencyTools,
+  ...hospitalTools
 };
 
 class ToolRegistry {

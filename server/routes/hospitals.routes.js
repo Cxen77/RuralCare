@@ -152,6 +152,84 @@ router.get(
   })
 );
 
+function isValidCoord(lat, lng) {
+  return (
+    typeof lat === 'number' &&
+    !isNaN(lat) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    typeof lng === 'number' &&
+    !isNaN(lng) &&
+    lng >= -180 &&
+    lng <= 180 &&
+    !(lat === 0 && lng === 0)
+  );
+}
+
+const handleHospitalLocationUpdate = asyncHandler(async (req, res) => {
+  const hospitalId = req.user?.hospitalId || req.params.id || req.body.hospitalId || 'hosp-601';
+  let hospital = await Hospital.findOne({ id: hospitalId });
+  if (!hospital) {
+    hospital = (await Hospital.find().sort({ createdAt: 1 }).limit(1))[0];
+  }
+  if (!hospital) throw new ApiError(404, 'NOT_FOUND', 'Hospital not found.');
+
+  const { latitude, longitude, address } = req.body || {};
+  if (latitude !== undefined && longitude !== undefined) {
+    const numLat = Number(latitude);
+    const numLng = Number(longitude);
+    if (!isValidCoord(numLat, numLng)) {
+      throw new ApiError(400, 'INVALID_COORDINATES', 'Latitude must be between -90 and 90, longitude between -180 and 180.');
+    }
+    hospital.latitude = numLat;
+    hospital.longitude = numLng;
+    hospital.locationUpdatedAt = new Date();
+  }
+  if (address && typeof address === 'string') {
+    hospital.address = address.trim();
+  }
+  await hospital.save();
+
+  await writeAudit({
+    actorId: req.user?.sub || 'system',
+    actorRole: req.user?.role || 'HOSPITAL_ADMIN',
+    action: 'hospital.location_update',
+    entityType: 'hospital',
+    entityId: hospital.id,
+    before: {},
+    after: { address: hospital.address, latitude: hospital.latitude, longitude: hospital.longitude },
+  });
+
+  return ok(res, {
+    id: hospital.id,
+    name: hospital.name,
+    address: hospital.address,
+    latitude: hospital.latitude,
+    longitude: hospital.longitude,
+    hasCoordinates: isValidCoord(hospital.latitude, hospital.longitude),
+    locationUpdatedAt: hospital.locationUpdatedAt,
+  });
+});
+
+// Specific /location routes must be defined before generic /:id routes
+router.put('/location', requireRole('HOSPITAL_ADMIN', 'HOSPITAL_STAFF', 'ADMIN'), handleHospitalLocationUpdate);
+router.patch('/location', requireRole('HOSPITAL_ADMIN', 'HOSPITAL_STAFF', 'ADMIN'), handleHospitalLocationUpdate);
+router.put('/:id/location', requireRole('HOSPITAL_ADMIN', 'HOSPITAL_STAFF', 'ADMIN'), handleHospitalLocationUpdate);
+
+router.get(
+  '/me',
+  requireRole('HOSPITAL_ADMIN', 'HOSPITAL_STAFF', 'ADMIN'),
+  asyncHandler(async (req, res) => {
+    const hospitalId = req.user.hospitalId || 'hosp-601';
+    let hospital = await Hospital.findOne({ id: hospitalId });
+    if (!hospital) {
+      hospital = (await Hospital.find().sort({ createdAt: 1 }).limit(1))[0];
+    }
+    if (!hospital) throw new ApiError(404, 'NOT_FOUND', 'Hospital record not found.');
+    return ok(res, hospital);
+  })
+);
+
 router.get(
   '/:id',
   asyncHandler(async (req, res) => {
@@ -168,7 +246,17 @@ router.patch(
     const hospital = await Hospital.findOne({ id: req.params.id });
     if (!hospital) throw new ApiError(404, 'NOT_FOUND', 'Hospital not found.');
 
-    const before = { beds: hospital.beds, blood: hospital.blood };
+    const before = {
+      name: hospital.name,
+      phone: hospital.phone,
+      emergencyHelpline: hospital.emergencyHelpline,
+      acceptingEmergency: hospital.acceptingEmergency,
+      beds: hospital.beds,
+      blood: hospital.blood,
+      departments: hospital.departments,
+      diagnostics: hospital.diagnostics,
+    };
+
     delete req.body.id;
     delete req.body._id;
     Object.assign(hospital, req.body);
@@ -177,11 +265,20 @@ router.patch(
     await writeAudit({
       actorId: req.user.sub,
       actorRole: req.user.role,
-      action: 'hospital.capacity',
+      action: 'hospital.update',
       entityType: 'hospital',
       entityId: hospital.id,
       before,
-      after: { beds: hospital.beds, blood: hospital.blood },
+      after: {
+        name: hospital.name,
+        phone: hospital.phone,
+        emergencyHelpline: hospital.emergencyHelpline,
+        acceptingEmergency: hospital.acceptingEmergency,
+        beds: hospital.beds,
+        blood: hospital.blood,
+        departments: hospital.departments,
+        diagnostics: hospital.diagnostics,
+      },
     });
     return ok(res, hospital);
   })

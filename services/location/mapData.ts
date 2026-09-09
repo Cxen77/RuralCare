@@ -8,7 +8,7 @@
  * profile) — never from AI/LLM output.
  */
 
-import type { Doctor, Pharmacy } from '../../types/schema';
+import type { Doctor, Pharmacy, Hospital } from '../../types/schema';
 import { isValidCoordinate } from './locationUtils';
 import type { MapMarker } from '../../components/maps/MapView';
 
@@ -71,6 +71,24 @@ export function buildPharmacyMarkers(pharmacies: Pharmacy[]): MapMarker[] {
       title: p.name,
       subtitle: p.isJanAushadhi ? 'Jan Aushadhi Kendra' : 'Pharmacy',
       type: 'pharmacy' as const,
+    }));
+}
+
+/**
+ * Builds hospital markers for the map.
+ * Hospitals without valid coordinates are excluded.
+ */
+export function buildHospitalMarkers(hospitals: Hospital[]): MapMarker[] {
+  if (!Array.isArray(hospitals)) return [];
+  return hospitals
+    .filter(h => isValidCoordinate(h.latitude, h.longitude))
+    .map(h => ({
+      id: `hospital-${h.id}`,
+      latitude: h.latitude as number,
+      longitude: h.longitude as number,
+      title: h.name,
+      subtitle: `${h.type} • ${h.capabilities?.availableBeds ?? (h as any).beds?.general ?? 0} beds available`,
+      type: 'hospital' as const,
     }));
 }
 

@@ -29,6 +29,7 @@ import {
   buildDoctorMarkers,
   buildPatientMarker,
   buildPharmacyMarkers,
+  buildHospitalMarkers,
 } from '../../services/location/mapData';
 
 interface Props {
@@ -44,10 +45,11 @@ interface Props {
 }
 
 export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking }) => {
-  const { doctors, pharmacies, patient, updatePatientProfile } = useCarePlatform();
+  const { doctors, pharmacies, hospitals, patient, updatePatientProfile } = useCarePlatform();
 
   const [selectedDoctorId, setSelectedDoctorId] = useState<string | null>(null);
   const [selectedPharmacyId, setSelectedPharmacyId] = useState<string | null>(null);
+  const [selectedHospitalId, setSelectedHospitalId] = useState<string | null>(null);
   const [focusNonce, setFocusNonce] = useState(0);
   const [fitNonce, setFitNonce] = useState(0);
   const hasSavedPatientCoords = isValidCoordinate(patient?.latitude, patient?.longitude);
@@ -71,13 +73,15 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
   const patientMarker = useMemo(() => buildPatientMarker(patient), [patient]);
   const doctorMarkers = useMemo(() => buildDoctorMarkers(doctors), [doctors]);
   const pharmacyMarkers = useMemo(() => buildPharmacyMarkers(pharmacies), [pharmacies]);
+  const hospitalMarkers = useMemo(() => buildHospitalMarkers(hospitals), [hospitals]);
   const markers: MapMarker[] = useMemo(() => {
     const list: MapMarker[] = [];
     if (patientMarker) list.push(patientMarker);
     list.push(...doctorMarkers);
     list.push(...pharmacyMarkers);
+    list.push(...hospitalMarkers);
     return list;
-  }, [patientMarker, doctorMarkers, pharmacyMarkers]);
+  }, [patientMarker, doctorMarkers, pharmacyMarkers, hospitalMarkers]);
 
   const doctorsWithoutCoords = doctors.filter(
     d => !isValidCoordinate(d.latitude, d.longitude)
@@ -91,6 +95,11 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
   const selectedPharmacy = useMemo(
     () => pharmacies.find(p => p.id === selectedPharmacyId) || null,
     [pharmacies, selectedPharmacyId]
+  );
+
+  const selectedHospital = useMemo(
+    () => hospitals.find(h => h.id === selectedHospitalId) || null,
+    [hospitals, selectedHospitalId]
   );
 
   const distanceLabel = useMemo(
@@ -109,6 +118,15 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
         selectedPharmacy
       ),
     [patient, selectedPharmacy]
+  );
+
+  const hospitalDistanceLabel = useMemo(
+    () =>
+      resolveDistanceLabel(
+        patient ? { latitude: patient.latitude, longitude: patient.longitude } : null,
+        selectedHospital
+      ),
+    [patient, selectedHospital]
   );
 
   // Focus a specific doctor when navigated from Doctors list / chat
@@ -194,11 +212,26 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
 
   const handleMarkerPress = useCallback(
     (id: string) => {
+      if (id.startsWith('hospital-')) {
+        const hospId = id.replace('hospital-', '');
+        const hosp = hospitals.find(h => h.id === hospId);
+        if (!hosp) return;
+        setSelectedDoctorId(null);
+        setSelectedPharmacyId(null);
+        setSelectedHospitalId(hosp.id);
+        if (isValidCoordinate(hosp.latitude, hosp.longitude)) {
+          setCenter({ lat: hosp.latitude as number, lng: hosp.longitude as number });
+          setZoom(15);
+          setFocusNonce(n => n + 1);
+        }
+        return;
+      }
       if (id.startsWith('pharmacy-')) {
         const phId = id.replace('pharmacy-', '');
         const ph = pharmacies.find(p => p.id === phId);
         if (!ph) return;
         setSelectedDoctorId(null);
+        setSelectedHospitalId(null);
         setSelectedPharmacyId(ph.id);
         if (isValidCoordinate(ph.latitude, ph.longitude)) {
           setCenter({ lat: ph.latitude as number, lng: ph.longitude as number });
@@ -210,6 +243,7 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
       const doc = doctors.find(d => d.id === id);
       if (!doc) return; // patient marker press — ignore
       setSelectedPharmacyId(null);
+      setSelectedHospitalId(null);
       setSelectedDoctorId(id);
       if (isValidCoordinate(doc.latitude, doc.longitude)) {
         setCenter({ lat: doc.latitude as number, lng: doc.longitude as number });
@@ -217,7 +251,7 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
         setFocusNonce(n => n + 1);
       }
     },
-    [doctors, pharmacies]
+    [doctors, pharmacies, hospitals]
   );
 
   const handleRecenterGps = async () => {
@@ -532,6 +566,87 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
                 <MaterialIcons name="directions" size={16} color={Colors.white} />
                 <Text style={styles.primaryBtnText}>Directions to Pharmacy</Text>
               </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Selected hospital card */}
+        {selectedHospital && (
+          <View style={styles.doctorCard}>
+            <View style={styles.cardHead}>
+              <View style={[styles.docAvatar, { backgroundColor: '#00685f' }]}>
+                <MaterialIcons name="local-hospital" size={20} color={Colors.white} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <Text style={styles.docName}>{selectedHospital.name}</Text>
+                  <View style={{ backgroundColor: (selectedHospital as any).acceptingEmergency !== false ? '#dcfce7' : '#fee2e2', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: (selectedHospital as any).acceptingEmergency !== false ? '#15803d' : '#b91c1c' }}>
+                      {(selectedHospital as any).acceptingEmergency !== false ? '24×7 Emergency' : 'Divert'}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.docMeta}>
+                  {selectedHospital.type || 'Hospital'} • Emergency: {(selectedHospital as any).beds?.emergency ?? (selectedHospital.capabilities?.emergency ?? 0)} Beds • ICU: {(selectedHospital as any).beds?.icu ?? (selectedHospital.capabilities?.icuBeds ?? 0)} Beds
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setSelectedHospitalId(null)}
+                accessibilityLabel="Close hospital details"
+              >
+                <MaterialIcons name="close" size={20} color={Colors.onSurfaceVariant} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.addressRow}>
+              <MaterialIcons name="location-on" size={14} color={Colors.onSurfaceVariant} />
+              <Text style={styles.addressText} numberOfLines={2}>
+                {selectedHospital.address || 'Address not available'}
+              </Text>
+            </View>
+
+            <View style={styles.distanceRow}>
+              <MaterialIcons name="near-me" size={14} color="#00685f" />
+              <Text style={styles.distanceText}>{hospitalDistanceLabel.text}</Text>
+              {!hospitalDistanceLabel.isEstimate && (
+                <Text style={styles.distanceHint}>(straight line)</Text>
+              )}
+            </View>
+
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                style={[styles.primaryBtn, { flex: 1, backgroundColor: '#00685f' }]}
+                onPress={() => {
+                  if (isValidCoordinate(selectedHospital.latitude, selectedHospital.longitude)) {
+                    openDirections(
+                      selectedHospital.latitude as number,
+                      selectedHospital.longitude as number,
+                      selectedHospital.name
+                    );
+                  } else {
+                    Alert.alert('No map coordinates', 'This hospital has no saved map location yet.');
+                  }
+                }}
+                activeOpacity={0.85}
+                accessibilityLabel="Get directions to the hospital"
+              >
+                <MaterialIcons name="directions" size={16} color={Colors.white} />
+                <Text style={styles.primaryBtnText}>Directions</Text>
+              </TouchableOpacity>
+
+              {(selectedHospital.phone || (selectedHospital as any).emergencyHelpline) && (
+                <TouchableOpacity
+                  style={[styles.bookingBtn, { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }]}
+                  onPress={() => {
+                    const tel = (selectedHospital as any).emergencyHelpline || selectedHospital.phone || '108';
+                    Linking.openURL(`tel:${tel}`);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <MaterialIcons name="phone" size={16} color={Colors.primary} />
+                  <Text style={styles.bookingBtnText}>Call Hospital</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         )}

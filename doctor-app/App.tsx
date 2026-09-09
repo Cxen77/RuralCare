@@ -570,12 +570,18 @@ export default function App() {
   const [fontsLoaded, fontError] = useFonts({
     ...MaterialIcons.font,
     ...MaterialCommunityIcons.font,
+    MaterialIcons: require('./assets/fonts/MaterialIcons.ttf'),
+    material: require('./assets/fonts/material.ttf'),
+    MaterialCommunityIcons: require('./assets/fonts/MaterialCommunityIcons.ttf'),
+    'material-community': require('./assets/fonts/material-community.ttf'),
   });
 
-  console.log('[DoctorApp] Fonts loaded:', fontsLoaded, 'Error:', fontError);
-
   if (!fontsLoaded && !fontError) {
-    return null;
+    return (
+      <View style={{ flex: 1, backgroundColor: Colors.surface }}>
+        <StatusBar style="dark" backgroundColor={Colors.surface} />
+      </View>
+    );
   }
 
   return (

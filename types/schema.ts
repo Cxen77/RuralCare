@@ -234,10 +234,33 @@ export interface HospitalCapability {
 export interface Hospital {
   id: string;
   name: string;
-  type: 'PHC' | 'CHC' | 'SubDistrict' | 'District' | 'Private';
+  type: string;
   address: string;
+  latitude?: number;
+  longitude?: number;
+  locationUpdatedAt?: string;
   distanceKm: number;
   phone: string;
+  emergencyHelpline?: string;
+  acceptingEmergency?: boolean;
+  operatingHours?: string;
+  nodalOfficer?: string;
+  contactEmail?: string;
+  beds?: {
+    general?: number;
+    icu?: number;
+    emergency?: number;
+    ventilator?: number;
+  };
+  totalBeds?: {
+    general?: number;
+    icu?: number;
+    emergency?: number;
+    ventilator?: number;
+  };
+  blood?: Record<string, number>;
+  departments?: string[];
+  diagnostics?: string[];
   capabilities: HospitalCapability;
   rating: number;
 }
