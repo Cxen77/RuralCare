@@ -491,6 +491,7 @@ function DoctorApp() {
           <PatientsScreen
             patients={patients}
             statusById={statusById}
+            appointments={appointments}
             onStartConsult={startConsultByPatient}
           />
         )}
