@@ -265,7 +265,15 @@ export default function App({ user, onLogout }) {
           patientName: r.patientName || 'Rural Patient',
           doctorName: r.doctorName || 'Medical Officer',
           issuedAt: r.createdAt,
-          dispensingStatus: r.availability ? (r.availability === 'full' ? 'dispensed' : 'partial') : 'pending',
+          // Canonical card state derives from the request status, not availability.
+          // pending → actionable; unavailable → terminal; responded/reserved/
+          // confirmed → accepted pipeline; dispensed → terminal.
+          dispensingStatus:
+            r.status === 'unavailable' ? 'unavailable'
+            : r.status === 'dispensed' ? 'dispensed'
+            : ['confirmed', 'preparing', 'ready_for_pickup'].includes(r.status) ? r.status
+            : ['responded', 'reserved'].includes(r.status) ? 'confirmed'
+            : 'pending',
           availability: r.availability,
           status: r.status,
           items: reqItems,
@@ -298,50 +306,142 @@ export default function App({ user, onLogout }) {
       [rxId]: { ...(prev[rxId] || {}), [med]: avail },
     }));
 
-  const respondRx = async (rxId, availability) => {
-    const rx = allPrescriptions.find((r) => r.id === rxId);
-    if (!rx) return;
-    const items = Array.isArray(rx.items) ? rx.items : [];
+  // Single in-flight guard prevents double-click duplicate transitions.
+  const [busyRequestId, setBusyRequestId] = useState(null);
+
+  const refreshRequests = async () => {
     try {
-      if (rx.requestId) {
-        if (availability === 'full') {
-          // Canonical confirm endpoint with atomic double-claim prevention
-          const res = await api.post(`/pharmacy/requests/${rx.requestId}/confirm`, {
-            pharmacyId: user?.pharmacyId || 'ph1',
-          });
-          const token = res?.reservationToken || rx.reservationToken || 'CONFIRMED';
-          showNotification(`Confirmed & Reserved for ${rx.patientName}! Pickup Token: ${token}`);
-        } else {
-          await api.post(`/pharmacy/requests/${rx.requestId}/respond`, {
-            availability,
-            items: items.map((i) => ({
+      const latest = await api.get('/pharmacy/requests?status=all');
+      setRequests({ data: latest });
+    } catch {
+      // Poller will recover on next tick; don't mask the toast just shown.
+    }
+  };
+
+  const requestErrorMessage = (err, fallback) => {
+    if (err?.status === 409) {
+      // Already processed: tell the user plainly and refresh below.
+      return err?.message || 'This request was already processed. Showing the latest status.';
+    }
+    return err?.message || fallback;
+  };
+
+  // ── Accept: single canonical path. If server inventory is full → /confirm
+  // (atomic claim). Otherwise fall back to /respond partial (never double-call
+  // both on success; only one state transition per click).
+  const acceptRx = async (rxId) => {
+    const rx = allPrescriptions.find((r) => r.id === rxId);
+    if (!rx || !rx.requestId || busyRequestId === rx.requestId) return;
+    setBusyRequestId(rx.requestId);
+    try {
+      // Prefer atomic confirm; server re-checks stock authoritatively.
+      try {
+        const res = await api.post(`/pharmacy/requests/${rx.requestId}/confirm`, {
+          pharmacyId: user?.pharmacyId || 'ph1',
+        });
+        const token = res?.reservationToken || rx.reservationToken || 'CONFIRMED';
+        showNotification(
+          res?.deduped
+            ? `Already confirmed for ${rx.patientName}. Pickup Token: ${token}`
+            : `Confirmed & Reserved for ${rx.patientName}! Pickup Token: ${token}`
+        );
+      } catch (confirmErr) {
+        // OUT_OF_STOCK (400) or partial stock → single partial respond instead.
+        // INVALID_STATE/ALREADY_CLAIMED (409) → just refresh, don't cascade.
+        if (confirmErr?.code === 'OUT_OF_STOCK') {
+          const res = await api.post(`/pharmacy/requests/${rx.requestId}/respond`, {
+            availability: 'partial',
+            items: (Array.isArray(rx.items) ? rx.items : []).map((i) => ({
               drugName: i.medicine || i.drugName,
               medicine: i.medicine || i.drugName,
               quantity: i.quantity,
               dosage: i.dose || i.dosage,
             })),
-            reserve: availability === 'partial',
+            reserve: true,
           });
-          showNotification(`e-Rx ${rx.prescriptionCode} updated: ${availability}`);
+          showNotification(
+            res?.deduped
+              ? `Already recorded as partial for ${rx.patientName}.`
+              : `Partially available — recorded for ${rx.patientName}.`
+          );
+        } else {
+          throw confirmErr;
         }
-      } else {
-        await api.patch(`/prescriptions/${rx.id}`, {
-          dispensingStatus: availability === 'full' ? 'confirmed' : 'partial',
-          pharmacyId: user?.pharmacyId || 'ph1',
-        });
-        showNotification(`Prescription status updated to ${availability === 'full' ? 'confirmed' : 'partial'}`);
       }
       setOverrides((prev) => {
         const next = { ...prev };
         delete next[rxId];
         return next;
       });
+      await refreshRequests();
     } catch (err) {
-      if (err?.message?.includes('ALREADY_CLAIMED') || err?.status === 409) {
-        showNotification('Notice: Prescription was already claimed by another pharmacy.');
-      } else {
-        showNotification(`Response updated: ${err?.message || 'Done'}`);
-      }
+      showNotification(requestErrorMessage(err, 'Accept failed. Please try again.'));
+      await refreshRequests();
+    } finally {
+      setBusyRequestId(null);
+    }
+  };
+
+  // ── Unavailable: single canonical path → /respond { availability: 'none' }.
+  const markUnavailableRx = async (rxId) => {
+    const rx = allPrescriptions.find((r) => r.id === rxId);
+    if (!rx || !rx.requestId || busyRequestId === rx.requestId) return;
+    setBusyRequestId(rx.requestId);
+    try {
+      const res = await api.post(`/pharmacy/requests/${rx.requestId}/respond`, {
+        availability: 'none',
+        reserve: false,
+      });
+      showNotification(
+        res?.deduped
+          ? `Already marked unavailable for ${rx.patientName}.`
+          : `Marked unavailable for ${rx.patientName}.`
+      );
+      setOverrides((prev) => {
+        const next = { ...prev };
+        delete next[rxId];
+        return next;
+      });
+      await refreshRequests();
+    } catch (err) {
+      showNotification(requestErrorMessage(err, 'Could not mark unavailable. Please try again.'));
+      await refreshRequests();
+    } finally {
+      setBusyRequestId(null);
+    }
+  };
+
+  const respondRx = async (rxId, availability) => {
+    if (availability === 'unavailable' || availability === 'none') return markUnavailableRx(rxId);
+    if (availability === 'full') return acceptRx(rxId);
+    // Legacy partial path (kept for any residual caller, single call only).
+    const rx = allPrescriptions.find((r) => r.id === rxId);
+    if (!rx || !rx.requestId || busyRequestId === rx.requestId) return;
+    setBusyRequestId(rx.requestId);
+    const items = Array.isArray(rx.items) ? rx.items : [];
+    try {
+      await api.post(`/pharmacy/requests/${rx.requestId}/respond`, {
+        availability,
+        items: items.map((i) => ({
+          drugName: i.medicine || i.drugName,
+          medicine: i.medicine || i.drugName,
+          quantity: i.quantity,
+          dosage: i.dose || i.dosage,
+        })),
+        reserve: availability === 'partial',
+      });
+      showNotification(`e-Rx ${rx.prescriptionCode} updated: ${availability}`);
+      setOverrides((prev) => {
+        const next = { ...prev };
+        delete next[rxId];
+        return next;
+      });
+      await refreshRequests();
+    } catch (err) {
+      showNotification(requestErrorMessage(err, 'Update failed. Please try again.'));
+      await refreshRequests();
+    } finally {
+      setBusyRequestId(null);
     }
   };
 
@@ -358,8 +458,10 @@ export default function App({ user, onLogout }) {
         });
       }
       showNotification(`Order moved to: ${newStatus.replace(/_/g, ' ').toUpperCase()}`);
+      await refreshRequests();
     } catch (err) {
-      showNotification(`Status update: ${err?.message || 'Updated'}`);
+      showNotification(requestErrorMessage(err, 'Status update failed. Please try again.'));
+      await refreshRequests();
     }
   };
 
@@ -943,9 +1045,15 @@ export default function App({ user, onLogout }) {
               <div className="rx-grid">
                 {filteredPrescriptions.map((req) => {
                   const items = Array.isArray(req.items) ? req.items : [];
+                  const isUnavailable = req.dispensingStatus === 'unavailable' || req.status === 'unavailable';
                   const isDispensed = req.dispensingStatus === 'dispensed';
+                  // Accepted pipeline covers both the new canonical request statuses
+                  // (responded/reserved) and the legacy dispensing stages.
                   const isConfirmed = ['confirmed', 'preparing', 'ready_for_pickup'].includes(req.dispensingStatus);
-                  const isResponded = !!req.availability || isConfirmed || isDispensed;
+                  const isAccepted = isConfirmed || ['responded', 'reserved', 'confirmed'].includes(req.status);
+                  const isFinal = isUnavailable || isDispensed;
+                  const isResponded = isAccepted || isFinal;
+                  const busy = busyRequestId && req.requestId && busyRequestId === req.requestId;
 
                   const allMarked = items.length > 0 && items.every((i) => {
                     if (i.available !== null && i.available !== undefined) return true;
@@ -1050,52 +1158,32 @@ export default function App({ user, onLogout }) {
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                             <button
                               className="btn btn-primary btn-sm"
-                              style={{ gridColumn: 'span 2' }}
-                              disabled={!allMarked}
-                              onClick={() => respondRx(req.id, 'full')}
+                              disabled={!allMarked || busy}
+                              onClick={() => acceptRx(req.id)}
                             >
-                              Confirm Availability & Reserve (Hold Stock)
+                              Accept
                             </button>
                             <button
-                              className="btn btn-outline btn-sm"
-                              disabled={!allMarked || !anyAvail}
-                              onClick={() => respondRx(req.id, 'partial')}
+                              className="btn btn-outline btn-sm rx-unavailable-button"
+                              disabled={busy}
+                              onClick={() => markUnavailableRx(req.id)}
                             >
-                              Partial Hold
-                            </button>
-                            <button
-                                    className="btn btn-outline btn-sm rx-unavailable-button"
-                              onClick={() => respondRx(req.id, 'unavailable')}
-                            >
-                              Unavailable
+                              {busy ? 'Working…' : 'Unavailable'}
                             </button>
                           </div>
                         ) : (
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                            <span style={{ fontSize: 12, color: 'var(--on-surface-variant)' }}>
-                              {isDispensed
-                                ? 'Medication Dispensed to Patient'
-                                : `Stage: ${(req.dispensingStatus || 'confirmed').replace(/_/g, ' ').toUpperCase()}`}
+                            <span className={`status-pill ${isFinal ? 'dispensed' : 'confirmed'}`}>
+                              {isUnavailable ? 'Unavailable' : isDispensed ? 'Dispensed' : 'Accepted'}
+                              {req.reservationToken ? ` · ${req.reservationToken}` : ''}
                             </span>
-                            {!isDispensed && (
+                            <span style={{ fontSize: 12, color: 'var(--on-surface-variant)' }}>
+                              {isFinal
+                                ? (isUnavailable ? 'Marked unavailable — no further action.' : 'Medication Dispensed to Patient')
+                                : `Accepted${req.reservationToken ? ` · Token ${req.reservationToken}` : ''}`}
+                            </span>
+                            {!isFinal && !isDispensed && (
                               <div style={{ display: 'flex', gap: 6 }}>
-                                {req.dispensingStatus === 'confirmed' && (
-                                  <button
-                                    className="btn btn-outline btn-sm"
-                                    onClick={() => updateOrderStatus(req.requestId, req.id, 'preparing')}
-                                  >
-                                    Start Preparing
-                                  </button>
-                                )}
-                                {req.dispensingStatus === 'preparing' && (
-                                  <button
-                                    className="btn btn-outline btn-sm"
-                                    style={{ borderColor: 'var(--tertiary)', color: 'var(--tertiary)' }}
-                                    onClick={() => updateOrderStatus(req.requestId, req.id, 'ready_for_pickup')}
-                                  >
-                                    Ready for Pickup
-                                  </button>
-                                )}
                                 <button
                                   className="btn btn-primary btn-sm"
                                   onClick={() => {

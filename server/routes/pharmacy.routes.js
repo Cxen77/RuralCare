@@ -625,13 +625,34 @@ router.post(
   '/requests/:id/respond',
   requireRole('PHARMACIST', 'ADMIN'),
   asyncHandler(async (req, res) => {
-    const { availability, reserve, items, totalCost } = req.body;
+    let { availability, reserve, items, totalCost } = req.body || {};
+    // Frontend historically sent 'unavailable'; canonical value is 'none'.
+    // Accept the alias so the Unavailable button never 400s on payload shape.
+    if (availability === 'unavailable') availability = 'none';
     if (!['full', 'partial', 'none'].includes(availability)) {
       throw new ApiError(400, 'INVALID_AVAILABILITY', "availability must be 'full', 'partial', or 'none'.");
     }
 
     const reqDoc = await PharmacyRequest.findOne({ id: req.params.id });
     if (!reqDoc) throw new ApiError(404, 'NOT_FOUND', 'Pharmacy request not found.');
+
+    // Idempotent repeat: same availability already recorded → return current state.
+    if (reqDoc.availability === availability && ['responded', 'reserved', 'unavailable'].includes(reqDoc.status)) {
+      const rxExisting = await Prescription.findOne({ id: reqDoc.prescriptionId });
+      const existingResv = availability === 'none'
+        ? null
+        : await Reservation.findOne({ prescriptionId: reqDoc.prescriptionId, pharmacyId: reqDoc.pharmacyId });
+      return ok(res, { request: reqDoc, prescription: rxExisting, reservation: existingResv, deduped: true });
+    }
+
+    // Terminal states cannot be re-responded (prevents double Accept/Unavailable confusion).
+    if (['confirmed', 'preparing', 'ready_for_pickup', 'fulfilled', 'dispensed', 'unavailable', 'cancelled'].includes(reqDoc.status)) {
+      throw new ApiError(
+        409,
+        'INVALID_STATE',
+        `Request is already "${reqDoc.status}" and cannot be updated. Refresh to see the current state.`
+      );
+    }
 
     const rx = await Prescription.findOne({ id: reqDoc.prescriptionId });
     if (!rx) throw new ApiError(404, 'NOT_FOUND', 'Linked prescription not found.');
@@ -655,6 +676,15 @@ router.post(
     }
 
     let reservation = null;
+    if (availability === 'none') {
+      // No stock: terminal unavailable/rejected state, no reservation.
+      reqDoc.availability = 'none';
+      reqDoc.status = 'unavailable';
+      reqDoc.respondedAt = new Date().toISOString();
+      await reqDoc.save();
+      return ok(res, { request: reqDoc, prescription: rx, reservation: null });
+    }
+
     if (reserve && availability !== 'none') {
       const token = `RC-${Math.floor(1000 + Math.random() * 8999)}`;
       const resvItems = (Array.isArray(items) && items.length > 0)
@@ -840,6 +870,28 @@ router.post(
 
     const reqDoc = await PharmacyRequest.findOne({ id: req.params.id });
     if (!reqDoc) throw new ApiError(404, 'NOT_FOUND', 'Pharmacy request not found.');
+
+    // Idempotent repeat: this pharmacy already confirmed this request.
+    if (reqDoc.status === 'confirmed' && reqDoc.pharmacyId === pharmacyId && reqDoc.reservationToken) {
+      const existingResv = await Reservation.findOne({ prescriptionId: reqDoc.prescriptionId, pharmacyId });
+      return ok(res, {
+        request: reqDoc,
+        reservation: existingResv,
+        token: reqDoc.reservationToken,
+        reservationToken: reqDoc.reservationToken,
+        pharmacyName: reqDoc.pharmacyName,
+        deduped: true,
+      });
+    }
+
+    // Terminal states cannot be confirmed again — surface a clear 409, never a confusing 400.
+    if (['confirmed', 'preparing', 'ready_for_pickup', 'fulfilled', 'dispensed', 'unavailable', 'cancelled', 'responded', 'reserved'].includes(reqDoc.status)) {
+      throw new ApiError(
+        409,
+        'INVALID_STATE',
+        `Request is already "${reqDoc.status}" and cannot be confirmed again. Refresh to see the current state.`
+      );
+    }
 
     const rx = await Prescription.findOne({ id: reqDoc.prescriptionId });
     if (!rx) throw new ApiError(404, 'NOT_FOUND', 'Linked prescription not found.');
