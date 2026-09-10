@@ -8,7 +8,7 @@
  * Works in both Expo Web builds and standard browsers.
  */
 
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 
 let NativeWebRTC: any = null;
 if (Platform.OS !== 'web') {
@@ -95,6 +95,7 @@ export class WebRTCCallingEngine {
   private listeners: Map<CallEventType, Set<CallEventListener>> = new Map();
   private pendingIceCandidates: RTCIceCandidateInit[] = [];
   private isOfferer = false;
+  private appStateSub: { remove: () => void } | null = null;
 
   currentCall: CallState | null = null;
   isWsConnected = false;
@@ -143,9 +144,19 @@ export class WebRTCCallingEngine {
   connect(authToken: string) {
     this.token = authToken;
     this.doConnect();
+    // Android suspends/kills sockets while the app is backgrounded, leaving the
+    // user invisible to the signaling server (presence offline) so incoming
+    // calls are lost. Reconnect whenever the app returns to the foreground.
+    if (Platform.OS !== 'web' && !this.appStateSub) {
+      this.appStateSub = AppState.addEventListener('change', this.handleAppStateChange);
+    }
   }
 
   disconnect() {
+    if (this.appStateSub) {
+      this.appStateSub.remove();
+      this.appStateSub = null;
+    }
     this.clearReconnect();
     this.clearKeepAlive();
     if (this.ws) {
@@ -157,6 +168,16 @@ export class WebRTCCallingEngine {
     this.emit('wsDisconnected');
   }
 
+  private handleAppStateChange = (state: string) => {
+    if (state !== 'active') return;
+    const wsState = this.ws ? this.ws.readyState : -1;
+    if (wsState === WebSocket.OPEN || wsState === WebSocket.CONNECTING) return;
+    console.log('[CALL DEBUG] APP FOREGROUND - restoring signaling socket');
+    this.reconnectAttempts = 0;
+    this.clearReconnect();
+    this.doConnect();
+  };
+
   private doConnect() {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
@@ -167,6 +188,7 @@ export class WebRTCCallingEngine {
       this.ws = new WebSocket(url);
 
       this.ws.onopen = () => {
+        console.log('[CALL DEBUG] SOCKET CONNECTED');
         this.reconnectAttempts = 0;
         this.startKeepAlive();
       };
@@ -179,6 +201,7 @@ export class WebRTCCallingEngine {
       };
 
       this.ws.onclose = () => {
+        console.log('[CALL DEBUG] SOCKET DISCONNECTED');
         this.isWsConnected = false;
         this.clearKeepAlive();
         this.emit('wsDisconnected');
@@ -230,6 +253,7 @@ export class WebRTCCallingEngine {
         break;
 
       case 'call:initiated':
+        console.log('[CALL DEBUG] CALL INITIATED callId=' + msg.callId);
         this.isOfferer = true;
         this.currentCall = {
           callId: msg.callId,
@@ -257,6 +281,7 @@ export class WebRTCCallingEngine {
         break;
 
       case 'call:incoming':
+        console.log('[CALL DEBUG] INCOMING EVENT callId=' + msg.callId + ' caller=' + (msg.callerName || ''));
         this.isOfferer = false;
         this.currentCall = {
           callId: msg.callId,
@@ -320,6 +345,7 @@ export class WebRTCCallingEngine {
         break;
 
       case 'call:error':
+        console.log('[CALL DEBUG] CALL ERROR ' + msg.error);
         this.emit('error', { error: msg.error });
         break;
 
@@ -336,6 +362,7 @@ export class WebRTCCallingEngine {
   // ── Call Actions ─────────────────────────────────────────────────────────
 
   initiateCall(appointmentId: string, callType: CallType = 'video') {
+    console.log(`[CALL DEBUG] CALL INITIATE appointmentId=${appointmentId} callType=${callType} wsConnected=${this.isWsConnected}`);
     this.send({ type: 'call:initiate', appointmentId, callType });
   }
 
@@ -622,7 +649,10 @@ export class WebRTCCallingEngine {
     }
 
     if (this.localStream) {
+      console.log(`[CALL DEBUG] LOCAL MEDIA OK audioTracks=${this.localStream.getAudioTracks().length} videoTracks=${this.localStream.getVideoTracks().length}`);
       this.emit('localStream', this.localStream);
+    } else {
+      console.log('[CALL DEBUG] LOCAL MEDIA UNAVAILABLE (no stream acquired)');
     }
   }
 
