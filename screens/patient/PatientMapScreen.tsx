@@ -241,7 +241,7 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
     let alive = true;
     const fetchNearby = async () => {
       try {
-        const API_URL = API_BASE_URL || 'http://localhost:4000';
+        const API_URL = API_BASE_URL || 'https://ruralcare-sia2.onrender.com';
         const lat = patient?.latitude || center.lat || 26.7606;
         const lng = patient?.longitude || center.lng || 83.3732;
         const res = await fetch(`${API_URL}/api/emergencies/nearby?lat=${lat}&lng=${lng}&radiusKm=50`);
@@ -259,7 +259,7 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
 
   // Connect to Socket.IO for real-time emergency events
   useEffect(() => {
-    const API_URL = API_BASE_URL || 'http://localhost:4000';
+    const API_URL = API_BASE_URL || 'https://ruralcare-sia2.onrender.com';
     const socket = io(API_URL, {
       path: '/socket.io',
       transports: ['websocket', 'polling'],

@@ -17,6 +17,8 @@ import * as ExpoLocation from 'expo-location';
 import { Colors, Radii, Shadows, Spacing } from '../../constants/theme';
 import { apiClient, API_BASE_URL } from '../../services/apiClient';
 
+import * as ImagePicker from 'expo-image-picker';
+
 interface Props {
   visible: boolean;
   onClose: () => void;
@@ -45,6 +47,7 @@ export const ReportEmergencyModal: React.FC<Props> = ({
   initialCoords,
 }) => {
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [emergencyType, setEmergencyType] = useState('road_accident');
   const [severity, setSeverity] = useState('critical');
@@ -83,6 +86,7 @@ export const ReportEmergencyModal: React.FC<Props> = ({
 
   const resetForm = () => {
     setPhotoBlob(null);
+    setPhotoUri(null);
     setPhotoPreview(null);
     setDescription('');
     setEmergencyType('road_accident');
@@ -191,6 +195,51 @@ export const ReportEmergencyModal: React.FC<Props> = ({
     }
   };
 
+  const handleNativeCamera = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Camera Permission', 'Camera permission is required to photograph the incident.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.85,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setPhotoUri(asset.uri);
+        setPhotoPreview(asset.uri);
+      }
+    } catch (err: any) {
+      console.error('[Camera] Native camera error:', err);
+      Alert.alert('Camera Error', err.message || 'Unable to open camera.');
+    }
+  };
+
+  const handleNativeGallery = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Gallery Permission', 'Storage permission is required to select photos.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.85,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setPhotoUri(asset.uri);
+        setPhotoPreview(asset.uri);
+      }
+    } catch (err: any) {
+      console.error('[Gallery] Selection error:', err);
+    }
+  };
+
   const handleFallbackFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -202,14 +251,17 @@ export const ReportEmergencyModal: React.FC<Props> = ({
 
   const handleRetake = () => {
     setPhotoBlob(null);
+    setPhotoUri(null);
     setPhotoPreview(null);
     if (Platform.OS === 'web') {
       startWebCamera();
+    } else {
+      handleNativeCamera();
     }
   };
 
   const handleSubmit = async () => {
-    if (!photoBlob) {
+    if (!photoBlob && !photoUri && !photoPreview) {
       Alert.alert('Photo Required', 'Please capture a live photo of the incident using the camera.');
       return;
     }
@@ -220,7 +272,19 @@ export const ReportEmergencyModal: React.FC<Props> = ({
     setSubmitting(true);
     try {
       const formData = new FormData();
-      formData.append('photo', photoBlob, 'emergency_live_capture.jpg');
+      if (Platform.OS === 'web' && photoBlob) {
+        formData.append('photo', photoBlob, 'emergency_live_capture.jpg');
+      } else {
+        const uriToUse = photoUri || photoPreview!;
+        const filename = uriToUse.split('/').pop() || 'emergency_live_capture.jpg';
+        const match = /\.(\w+)$/.exec(filename);
+        const type = match ? `image/${match[1]}` : 'image/jpeg';
+        formData.append('photo', {
+          uri: Platform.OS === 'android' ? uriToUse : uriToUse.replace('file://', ''),
+          name: filename,
+          type,
+        } as any);
+      }
       formData.append('emergencyType', emergencyType);
       formData.append('severity', severity);
       formData.append('description', description.trim());
@@ -228,7 +292,7 @@ export const ReportEmergencyModal: React.FC<Props> = ({
       formData.append('longitude', lng.toString());
       formData.append('address', address);
 
-      const API_URL = API_BASE_URL || 'http://localhost:4000';
+      const API_URL = API_BASE_URL || 'https://ruralcare-sia2.onrender.com';
       const token = apiClient.getToken ? apiClient.getToken() : null;
 
       const headers: Record<string, string> = {};
@@ -345,22 +409,37 @@ export const ReportEmergencyModal: React.FC<Props> = ({
                   <Text style={styles.fallbackSub}>
                     Live camera capture verifies real-time emergency authenticity.
                   </Text>
-                  <TouchableOpacity
-                    style={styles.launchCameraBtn}
-                    onPress={() => {
-                      if (Platform.OS === 'web') {
-                        if (fileInputRef.current) {
-                          fileInputRef.current.click();
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                    <TouchableOpacity
+                      style={[styles.launchCameraBtn, { flex: 1 }]}
+                      onPress={() => {
+                        if (Platform.OS === 'web') {
+                          if (fileInputRef.current) {
+                            fileInputRef.current.click();
+                          } else {
+                            startWebCamera();
+                          }
                         } else {
-                          startWebCamera();
+                          handleNativeCamera();
                         }
-                      }
-                    }}
-                    activeOpacity={0.85}
-                  >
-                    <MaterialIcons name="videocam" size={17} color="#FFFFFF" />
-                    <Text style={styles.launchCameraBtnText}>Open Camera</Text>
-                  </TouchableOpacity>
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <MaterialIcons name="photo-camera" size={17} color="#FFFFFF" />
+                      <Text style={styles.launchCameraBtnText}>Open Camera</Text>
+                    </TouchableOpacity>
+
+                    {Platform.OS !== 'web' && (
+                      <TouchableOpacity
+                        style={[styles.launchCameraBtn, { flex: 1, backgroundColor: '#475569' }]}
+                        onPress={handleNativeGallery}
+                        activeOpacity={0.85}
+                      >
+                        <MaterialIcons name="photo-library" size={17} color="#FFFFFF" />
+                        <Text style={styles.launchCameraBtnText}>Gallery</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
 
                   {Platform.OS === 'web' && (
                     <input

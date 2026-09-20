@@ -27,7 +27,7 @@ function resolveInitialApiBase(): string {
   }
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
   if (envUrl && envUrl.trim()) return envUrl.trim().replace(/\/+$/, '');
-  return 'http://localhost:4000';
+  return 'https://ruralcare-sia2.onrender.com';
 }
 
 const isNative = Platform.OS !== 'web';

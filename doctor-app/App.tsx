@@ -7,7 +7,7 @@ import { Provider as PaperProvider } from 'react-native-paper';
 import { useFonts } from 'expo-font';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Colors } from './constants/theme';
+import { Colors, Shadows } from './constants/theme';
 import { SwasthyaSetuTheme } from './constants/paperTheme';
 import { Header } from './components/Header';
 import { BottomTabBar, DoctorTab } from './components/BottomTabBar';

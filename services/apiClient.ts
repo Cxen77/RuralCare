@@ -17,7 +17,7 @@ function resolveInitialApiBase(): string {
       return 'http://localhost:4000';
     }
   }
-  return (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/+$/, '');
+  return (process.env.EXPO_PUBLIC_API_URL || 'https://ruralcare-sia2.onrender.com').replace(/\/+$/, '');
 }
 
 const CANDIDATE_HOSTS = [

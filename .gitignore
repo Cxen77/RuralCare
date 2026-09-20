@@ -40,6 +40,8 @@ android/local.properties
 *.aab
 *.keystore
 *.jks
+**/.cxx/
+.cxx/
 
 # Logs
 *.log
