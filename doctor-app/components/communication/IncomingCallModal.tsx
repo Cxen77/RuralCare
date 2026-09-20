@@ -19,21 +19,13 @@ interface IncomingCallModalProps {
 export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
   visible, callInfo, onAccept, onDecline,
 }) => {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
   const slideUpAnim = useRef(new Animated.Value(40)).current;
 
   useEffect(() => {
     if (visible) {
-      const pulse = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.25, duration: 700, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
-        ])
-      );
-      pulse.start();
       Animated.spring(slideUpAnim, { toValue: 0, useNativeDriver: true, tension: 60, friction: 10 }).start();
       if (Platform.OS !== 'web') Vibration.vibrate([0, 500, 200, 500], true);
-      return () => { pulse.stop(); if (Platform.OS !== 'web') Vibration.cancel(); };
+      return () => { if (Platform.OS !== 'web') Vibration.cancel(); };
     } else {
       slideUpAnim.setValue(40);
     }
@@ -54,9 +46,6 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
           </View>
 
           <View style={styles.callerSection}>
-            <Animated.View style={[styles.ring, styles.ring3, { transform: [{ scale: pulseAnim }] }]} />
-            <Animated.View style={[styles.ring, styles.ring2, { transform: [{ scale: Animated.multiply(pulseAnim, 0.85) }] }]} />
-            <Animated.View style={[styles.ring, styles.ring1, { transform: [{ scale: Animated.multiply(pulseAnim, 0.7) }] }]} />
             <View style={styles.avatar}><Text style={styles.avatarText}>{callerInitial}</Text></View>
           </View>
 
@@ -84,11 +73,7 @@ const styles = StyleSheet.create({
   container: { width: '85%', maxWidth: 360, backgroundColor: '#1E293B', borderRadius: 24, paddingVertical: 36, paddingHorizontal: 28, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   topLabel: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(34, 197, 94, 0.12)', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, marginBottom: 28 },
   topLabelText: { fontSize: 13, fontWeight: '600', color: '#34D399' },
-  callerSection: { alignItems: 'center', justifyContent: 'center', width: 180, height: 180, marginBottom: 8 },
-  ring: { position: 'absolute', borderRadius: 999, borderWidth: 2 },
-  ring1: { width: 120, height: 120, borderColor: 'rgba(8, 127, 140, 0.5)' },
-  ring2: { width: 150, height: 150, borderColor: 'rgba(8, 127, 140, 0.3)' },
-  ring3: { width: 180, height: 180, borderColor: 'rgba(8, 127, 140, 0.15)' },
+  callerSection: { alignItems: 'center', justifyContent: 'center', marginVertical: 12 },
   avatar: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#087F8C', alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 36, fontWeight: '700', color: '#FFF' },
   callerName: { fontSize: 22, fontWeight: '700', color: '#FFF', marginTop: 4 },

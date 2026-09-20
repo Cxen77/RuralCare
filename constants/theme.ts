@@ -20,9 +20,9 @@ export const Colors = {
   onSecondaryContainer: '#16324F',
 
   // Tertiary / Success
-  tertiary: '#00674A',
-  tertiaryContainer: '#EAFFF2',
-  onTertiaryContainer: '#005139',
+  tertiary: '#00646F',
+  tertiaryContainer: '#EFFDFF',
+  onTertiaryContainer: '#00646F',
   tertiaryAccent: '#5BAE8B',
 
   // Surface & Backgrounds

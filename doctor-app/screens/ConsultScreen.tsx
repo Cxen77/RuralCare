@@ -6,6 +6,7 @@ import { Appointment, Patient } from '../types';
 import { Avatar, Badge, Button, Card, Divider, IconButton, Input } from '../components/ui';
 import { AppointmentChatModal } from '../components/communication/AppointmentChatModal';
 import { CallModal } from '../components/communication/CallModal';
+import { DoctorHealthPassportModal } from '../components/DoctorHealthPassportModal';
 import { CallType } from '../services/communication/WebRTCCallingEngine';
 import { api } from '../services/api';
 
@@ -35,6 +36,7 @@ export const ConsultScreen: React.FC<ConsultScreenProps> = ({
   const [chatVisible, setChatVisible] = useState(false);
   const [callVisible, setCallVisible] = useState(false);
   const [callType, setCallType] = useState<CallType>('video');
+  const [passportVisible, setPassportVisible] = useState(false);
 
   return (
     <>
@@ -46,7 +48,13 @@ export const ConsultScreen: React.FC<ConsultScreenProps> = ({
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={styles.patientName}>{patient.name}</Text>
-              <Badge label={appointment?.mode === 'video' ? 'Video Visit' : 'In Clinic'} tone="navy" />
+              <View style={styles.modeIconBadge}>
+                <MaterialIcons
+                  name={appointment?.mode === 'video' ? 'videocam' : 'local-hospital'}
+                  size={16}
+                  color={appointment?.mode === 'video' ? Colors.primary : Colors.secondary}
+                />
+              </View>
             </View>
             <Text style={styles.patientMeta}>
               {patient.age ? `${patient.age}Y` : ''}{patient.gender ? ` • ${patient.gender}` : ''}{patient.bloodGroup ? ` • Blood Group ${patient.bloodGroup}` : ''}
@@ -70,8 +78,8 @@ export const ConsultScreen: React.FC<ConsultScreenProps> = ({
               onPress={() => setChatVisible(true)}
               activeOpacity={0.8}
             >
-              <MaterialIcons name="chat" size={16} color={Colors.primary} />
-              <Text style={styles.commChatText}>Chat with Patient</Text>
+              <MaterialIcons name="chat" size={17} color={Colors.primary} />
+              <Text style={styles.commChatText}>Chat</Text>
             </TouchableOpacity>
 
             {appointment.mode === 'video' ? (
@@ -84,7 +92,7 @@ export const ConsultScreen: React.FC<ConsultScreenProps> = ({
                   }}
                   activeOpacity={0.8}
                 >
-                  <MaterialIcons name="call" size={16} color={Colors.primary} />
+                  <MaterialIcons name="call" size={17} color="#334155" />
                   <Text style={styles.commVoiceText}>Voice</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -95,13 +103,31 @@ export const ConsultScreen: React.FC<ConsultScreenProps> = ({
                   }}
                   activeOpacity={0.8}
                 >
-                  <MaterialIcons name="videocam" size={16} color={Colors.white} />
+                  <MaterialIcons name="videocam" size={17} color={Colors.white} />
                   <Text style={styles.commVideoText}>Video</Text>
                 </TouchableOpacity>
               </>
             ) : null}
           </View>
         )}
+
+        {/* Longitudinal Health Passport Quick Access */}
+        <TouchableOpacity
+          style={styles.passportBtn}
+          onPress={() => setPassportVisible(true)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.passportBtnLeft}>
+            <View style={styles.passportIconWrap}>
+              <MaterialIcons name="medical-information" size={18} color={Colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.passportBtnText}>Patient Health Passport</Text>
+              <Text style={styles.passportBtnSubtext}>Longitudinal clinical records & history</Text>
+            </View>
+          </View>
+          <MaterialIcons name="chevron-right" size={20} color="#94A3B8" />
+        </TouchableOpacity>
       </Card>
 
       {/* AI Triage Summary */}
@@ -121,10 +147,42 @@ export const ConsultScreen: React.FC<ConsultScreenProps> = ({
       <Card radius={Radii.lg} style={{ gap: 10 }}>
         <Text style={styles.sectionTitlePlain}>Vitals</Text>
         <View style={styles.vitalsGrid}>
-          <Input value={bp} onChangeText={setBp} placeholder="BP (120/80)" keyboardType="numeric" />
-          <Input value={temp} onChangeText={setTemp} placeholder="Temp (°F)" keyboardType="numeric" />
-          <Input value={pulse} onChangeText={setPulse} placeholder="Pulse" keyboardType="numeric" />
-          <Input value={spo2} onChangeText={setSpo2} placeholder="SpO₂ (%)" keyboardType="numeric" />
+          <View style={styles.vitalCol}>
+            <Input
+              value={bp}
+              onChangeText={setBp}
+              placeholder="BP (120/80)"
+              keyboardType="numeric"
+              leadingIcon="speed"
+            />
+          </View>
+          <View style={styles.vitalCol}>
+            <Input
+              value={temp}
+              onChangeText={setTemp}
+              placeholder="Temp (°F)"
+              keyboardType="numeric"
+              leadingIcon="thermostat"
+            />
+          </View>
+          <View style={styles.vitalCol}>
+            <Input
+              value={pulse}
+              onChangeText={setPulse}
+              placeholder="Pulse (bpm)"
+              keyboardType="numeric"
+              leadingIcon="favorite"
+            />
+          </View>
+          <View style={styles.vitalCol}>
+            <Input
+              value={spo2}
+              onChangeText={setSpo2}
+              placeholder="SpO₂ (%)"
+              keyboardType="numeric"
+              leadingIcon="air"
+            />
+          </View>
         </View>
       </Card>
 
@@ -136,6 +194,7 @@ export const ConsultScreen: React.FC<ConsultScreenProps> = ({
           onChangeText={setNotes}
           placeholder="Examination notes..."
           multiline
+          numberOfLines={3}
         />
         <Input
           value={diagnosis}
@@ -147,20 +206,33 @@ export const ConsultScreen: React.FC<ConsultScreenProps> = ({
 
       {/* Actions */}
       <View style={styles.actionsRow}>
-        <View style={{ flex: 1 }}>
-          <Button label="Write Prescription" icon="receipt-long" block onPress={onOpenPrescription} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Button label="Create Referral" icon="send" variant="outline" block onPress={onOpenReferral} />
-        </View>
+        <TouchableOpacity
+          style={styles.prescriptionActionBtn}
+          onPress={onOpenPrescription}
+          activeOpacity={0.85}
+        >
+          <MaterialIcons name="receipt-long" size={18} color={Colors.white} />
+          <Text style={styles.prescriptionActionText}>Prescription</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.referralActionBtn}
+          onPress={onOpenReferral}
+          activeOpacity={0.85}
+        >
+          <MaterialIcons name="send" size={18} color={Colors.primary} />
+          <Text style={styles.referralActionText}>Referral</Text>
+        </TouchableOpacity>
       </View>
-      <Button
-        label="Complete Consultation"
-        icon="task-alt"
-        variant="secondary"
-        block
+
+      <TouchableOpacity
+        style={styles.completeBtn}
         onPress={onComplete}
-      />
+        activeOpacity={0.85}
+      >
+        <MaterialIcons name="task-alt" size={19} color={Colors.white} />
+        <Text style={styles.completeBtnText}>Complete Consultation</Text>
+      </TouchableOpacity>
     </ScrollView>
 
     {appointment?.id && (
@@ -184,6 +256,13 @@ export const ConsultScreen: React.FC<ConsultScreenProps> = ({
         />
       </>
     )}
+    {/* Doctor Health Passport Modal */}
+    <DoctorHealthPassportModal
+      visible={passportVisible}
+      patientId={patient.id}
+      patientName={patient.name}
+      onClose={() => setPassportVisible(false)}
+    />
     </>
   );
 };
@@ -196,7 +275,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     padding: Spacing.md,
     gap: 12,
-    paddingBottom: 24,
+    paddingBottom: 48,
   },
   bannerRow: {
     flexDirection: 'row',
@@ -208,6 +287,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.secondary,
   },
+  modeIconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#E6F4F1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#B5F1F8',
+  },
   patientMeta: {
     fontSize: 12,
     color: Colors.onSurfaceVariant,
@@ -217,52 +306,46 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#FFF5F5',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    borderRadius: Radii.md,
-    padding: 10,
-    marginTop: 10,
+    paddingVertical: 4,
+    marginTop: 6,
   },
   allergyBox: {},
   allergyText: {
     fontSize: 12,
     fontWeight: '600',
-    color: Colors.errorDark,
+    color: '#DC2626',
     flex: 1,
   },
   commActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginTop: 10,
+    marginTop: 12,
   },
   commChatBtn: {
     flex: 1,
+    height: 42,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 9,
-    paddingHorizontal: 12,
     borderRadius: Radii.md,
-    backgroundColor: Colors.primaryLight,
-    borderWidth: 1,
-    borderColor: Colors.primary,
+    backgroundColor: '#F0FDFA',
+    borderWidth: 1.5,
+    borderColor: '#99F6E4',
   },
   commChatText: {
     fontSize: 13,
     fontWeight: '700',
-    color: Colors.primary,
+    color: '#0D9488',
   },
   commVideoBtn: {
     flex: 1,
+    height: 42,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 9,
-    paddingHorizontal: 8,
+    gap: 6,
     borderRadius: Radii.md,
     backgroundColor: Colors.primary,
   },
@@ -273,21 +356,20 @@ const styles = StyleSheet.create({
   },
   commVoiceBtn: {
     flex: 1,
+    height: 42,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 9,
-    paddingHorizontal: 8,
+    gap: 6,
     borderRadius: Radii.md,
-    backgroundColor: Colors.white,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1.5,
-    borderColor: Colors.primary,
+    borderColor: '#CBD5E1',
   },
   commVoiceText: {
     fontSize: 13,
     fontWeight: '700',
-    color: Colors.primary,
+    color: '#334155',
   },
   sectionRow: {
     flexDirection: 'row',
@@ -325,11 +407,104 @@ const styles = StyleSheet.create({
   vitalsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    justifyContent: 'space-between',
+    rowGap: 10,
+  },
+  vitalCol: {
+    width: '48.5%',
+    minWidth: 130,
   },
   actionsRow: {
     flexDirection: 'row',
+    gap: 10,
+    marginTop: 6,
+  },
+  prescriptionActionBtn: {
+    flex: 1,
+    height: 46,
+    backgroundColor: Colors.primary,
+    borderRadius: Radii.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
-    marginTop: 4,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  prescriptionActionText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  referralActionBtn: {
+    flex: 1,
+    height: 46,
+    backgroundColor: Colors.white,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: Radii.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  referralActionText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  completeBtn: {
+    height: 48,
+    backgroundColor: '#0F172A',
+    borderRadius: Radii.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  completeBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  passportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: Radii.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 10,
+  },
+  passportBtnLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  passportIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#E6F4F1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  passportBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  passportBtnSubtext: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
   },
 });

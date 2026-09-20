@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Radii, Spacing } from '../constants/theme';
 import { Patient, PrescriptionItem } from '../types';
@@ -83,16 +83,57 @@ export const PrescriptionSheet: React.FC<PrescriptionSheetProps> = ({
       />
       <View style={{ height: 8 }} />
       <View style={styles.rowTwo}>
-        <Input value={dose} onChangeText={setDose} placeholder="Dose (1 tablet)" />
-        <Input value={duration} onChangeText={setDuration} placeholder="Duration (5 days)" />
+        <View style={{ flex: 1 }}>
+          <Input
+            value={dose}
+            onChangeText={setDose}
+            placeholder="Dose (1 tablet)"
+            leadingIcon="fitness-center"
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Input
+            value={duration}
+            onChangeText={setDuration}
+            placeholder="Duration (5 days)"
+            leadingIcon="schedule"
+          />
+        </View>
       </View>
       <View style={{ height: 8 }} />
-      <View style={styles.chipWrap}>
-        {FREQUENCIES.map(f => (
-          <Chip key={f} label={f} size="sm" selected={frequency === f} onPress={() => setFrequency(f)} />
-        ))}
+      <View style={styles.freqRow}>
+        {FREQUENCIES.map(f => {
+          const isSelected = frequency === f;
+          return (
+            <TouchableOpacity
+              key={f}
+              style={[styles.freqBtn, isSelected && styles.freqBtnSelected]}
+              onPress={() => setFrequency(f)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.freqText, isSelected && styles.freqTextSelected]}>
+                {f}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
-      <Button label="Add to Prescription" icon="add" variant="soft" block onPress={addItem} disabled={!canAdd} style={{ marginTop: 10 }} />
+
+      <TouchableOpacity
+        style={[styles.addBtn, canAdd ? styles.addBtnActive : styles.addBtnDisabled]}
+        onPress={addItem}
+        disabled={!canAdd}
+        activeOpacity={0.85}
+      >
+        <MaterialIcons
+          name="add-circle"
+          size={18}
+          color={canAdd ? Colors.primary : '#94A3B8'}
+        />
+        <Text style={[styles.addBtnText, canAdd ? styles.addBtnTextActive : styles.addBtnTextDisabled]}>
+          Add Medicine to List
+        </Text>
+      </TouchableOpacity>
 
       {!!items.length && (
         <>
@@ -101,7 +142,9 @@ export const PrescriptionSheet: React.FC<PrescriptionSheetProps> = ({
           <View style={{ gap: 8 }}>
             {items.map((item, idx) => (
               <View key={idx} style={styles.rxItem}>
-                <MaterialIcons name="medication" size={16} color={Colors.primary} />
+                <View style={styles.rxIconBox}>
+                  <MaterialIcons name="medication" size={18} color={Colors.primary} />
+                </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rxMed}>{item.medicine}</Text>
                   <Text style={styles.rxMeta}>{item.dose} • {item.frequency} • {item.duration}</Text>
@@ -120,26 +163,60 @@ export const PrescriptionSheet: React.FC<PrescriptionSheetProps> = ({
 
       <Divider style={{ marginVertical: 14 }} />
       <Text style={styles.sectionLabel}>Send To Pharmacy</Text>
-      <View style={styles.chipWrap}>
-        {PHARMACIES.map(p => (
-          <Chip
-            key={p}
-            label={p}
-            icon="storefront"
-            selected={pharmacy === p}
-            onPress={() => setPharmacy(p)}
-          />
-        ))}
+      <View style={styles.pharmacyList}>
+        {PHARMACIES.map(p => {
+          const isSelected = pharmacy === p;
+          return (
+            <TouchableOpacity
+              key={p}
+              style={[styles.pharmacyCard, isSelected && styles.pharmacyCardSelected]}
+              onPress={() => setPharmacy(p)}
+              activeOpacity={0.85}
+            >
+              <View style={styles.pharmacyCardLeft}>
+                <View style={[styles.pharmacyIconWrap, isSelected && styles.pharmacyIconWrapSelected]}>
+                  <MaterialIcons
+                    name="local-pharmacy"
+                    size={18}
+                    color={isSelected ? Colors.primary : '#64748B'}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.pharmacyName, isSelected && styles.pharmacyNameSelected]}>
+                    {p}
+                  </Text>
+                  <Text style={styles.pharmacySub}>
+                    {p.includes('PHC') ? 'On-site facility pharmacy • Immediate fulfillment' : 'Partner community pharmacy • Prescription dispatch'}
+                  </Text>
+                </View>
+              </View>
+              <MaterialIcons
+                name={isSelected ? 'check-circle' : 'radio-button-unchecked'}
+                size={20}
+                color={isSelected ? Colors.primary : '#CBD5E1'}
+              />
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
-      <Button
-        label={`Issue Prescription (${items.length})`}
-        icon="check-circle"
-        block
+      <TouchableOpacity
+        style={[styles.issueBtn, items.length > 0 ? styles.issueBtnActive : styles.issueBtnDisabled]}
         onPress={handleIssue}
         disabled={!items.length}
-        style={{ marginTop: 16 }}
-      />
+        activeOpacity={0.85}
+      >
+        <MaterialIcons
+          name="check-circle"
+          size={19}
+          color={items.length > 0 ? Colors.white : '#94A3B8'}
+        />
+        <Text style={[styles.issueBtnText, items.length > 0 ? styles.issueBtnTextActive : styles.issueBtnTextDisabled]}>
+          {items.length > 0
+            ? `Issue & Sign Prescription (${items.length})`
+            : 'Add a medicine to issue prescription'}
+        </Text>
+      </TouchableOpacity>
     </BottomSheet>
   );
 };
@@ -152,7 +229,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   title: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '700',
     color: Colors.secondary,
     marginBottom: 8,
@@ -184,21 +261,80 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
-  chipWrap: {
+  freqRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 6,
-    marginBottom: 4,
+    marginVertical: 4,
+  },
+  freqBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: Radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+  },
+  freqBtnSelected: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  freqText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  freqTextSelected: {
+    color: Colors.white,
+    fontWeight: '700',
+  },
+  addBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 44,
+    borderRadius: Radii.md,
+    marginTop: 10,
+  },
+  addBtnActive: {
+    backgroundColor: '#F0FDFA',
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+  },
+  addBtnDisabled: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+  },
+  addBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  addBtnTextActive: {
+    color: Colors.primary,
+  },
+  addBtnTextDisabled: {
+    color: '#94A3B8',
   },
   rxItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: Colors.surfaceContainerLow,
+    gap: 10,
+    backgroundColor: '#F8FAFC',
     borderRadius: Radii.md,
     borderWidth: 1,
-    borderColor: Colors.outlineLight,
+    borderColor: '#E2E8F0',
     padding: 10,
+  },
+  rxIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#E6F4F1',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   rxMed: {
     fontSize: 13,
@@ -209,5 +345,87 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.onSurfaceVariant,
     marginTop: 2,
+  },
+  pharmacyList: {
+    gap: 8,
+    marginVertical: 4,
+  },
+  pharmacyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: Radii.md,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+  },
+  pharmacyCardSelected: {
+    backgroundColor: '#F0FDFA',
+    borderColor: Colors.primary,
+  },
+  pharmacyCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  pharmacyIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pharmacyIconWrapSelected: {
+    backgroundColor: '#E6F4F1',
+  },
+  pharmacyName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  pharmacyNameSelected: {
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  pharmacySub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  issueBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 48,
+    borderRadius: Radii.md,
+    marginTop: 18,
+    marginBottom: 8,
+  },
+  issueBtnActive: {
+    backgroundColor: Colors.primary,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  issueBtnDisabled: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  issueBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  issueBtnTextActive: {
+    color: Colors.white,
+  },
+  issueBtnTextDisabled: {
+    color: '#94A3B8',
   },
 });

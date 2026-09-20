@@ -21,9 +21,18 @@ const PatientSchema = new mongoose.Schema({
   },
   language: { type: String, default: 'Hindi' },
   ayushmanEligible: { type: Boolean, default: false },
+  dateOfBirth: { type: String },
   bloodGroup: { type: String },
   allergies: [{ type: String }],
-  chronicConditions: [{ type: String }]
+  chronicConditions: [{ type: String }],
+  currentMedications: [{ type: String }],
+  previousConditions: [{ type: String }],
+  emergencyContact: {
+    name: { type: String },
+    phone: { type: String },
+    relation: { type: String }
+  },
+  importantNotes: { type: String }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Patient', PatientSchema);

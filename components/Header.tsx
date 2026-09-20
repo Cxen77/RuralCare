@@ -8,7 +8,7 @@ import { LocationPicker, ConfirmedLocation } from './maps/LocationPicker';
 
 interface HeaderProps {
   onProfilePress: () => void;
-  onSosPress: () => void;
+  onSosPress?: () => void;
   onViewMap?: () => void;
 }
 
@@ -70,15 +70,9 @@ export const Header: React.FC<HeaderProps> = ({ onProfilePress, onSosPress, onVi
 
         <View style={styles.rightSection}>
           <IconButton
-            icon="emergency"
+            icon="explore"
             size="md"
-            variant="dangerSoft"
-            onPress={onSosPress}
-          />
-          <IconButton
-            icon="map"
-            size="sm"
-            variant="plain"
+            variant="primarySoft"
             onPress={onViewMap}
             accessibilityLabel="Open care map"
           />

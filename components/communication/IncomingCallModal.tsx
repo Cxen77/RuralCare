@@ -22,20 +22,10 @@ interface IncomingCallModalProps {
 export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
   visible, callInfo, onAccept, onDecline,
 }) => {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
   const slideUpAnim = useRef(new Animated.Value(40)).current;
 
   useEffect(() => {
     if (visible) {
-      // Start pulse animation
-      const pulse = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.25, duration: 700, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
-        ])
-      );
-      pulse.start();
-
       // Slide up buttons
       Animated.spring(slideUpAnim, { toValue: 0, useNativeDriver: true, tension: 60, friction: 10 }).start();
 
@@ -45,7 +35,6 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
       }
 
       return () => {
-        pulse.stop();
         if (Platform.OS !== 'web') Vibration.cancel();
       };
     } else {
@@ -72,11 +61,6 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
 
           {/* Caller info */}
           <View style={styles.callerSection}>
-            {/* Pulse rings */}
-            <Animated.View style={[styles.ring, styles.ring3, { transform: [{ scale: pulseAnim }] }]} />
-            <Animated.View style={[styles.ring, styles.ring2, { transform: [{ scale: Animated.multiply(pulseAnim, 0.85) }] }]} />
-            <Animated.View style={[styles.ring, styles.ring1, { transform: [{ scale: Animated.multiply(pulseAnim, 0.7) }] }]} />
-
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{callerInitial}</Text>
             </View>
@@ -149,29 +133,7 @@ const styles = StyleSheet.create({
   callerSection: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 180,
-    height: 180,
-    marginBottom: 8,
-  },
-  ring: {
-    position: 'absolute',
-    borderRadius: 999,
-    borderWidth: 2,
-  },
-  ring1: {
-    width: 120,
-    height: 120,
-    borderColor: 'rgba(8, 127, 140, 0.5)',
-  },
-  ring2: {
-    width: 150,
-    height: 150,
-    borderColor: 'rgba(8, 127, 140, 0.3)',
-  },
-  ring3: {
-    width: 180,
-    height: 180,
-    borderColor: 'rgba(8, 127, 140, 0.15)',
+    marginVertical: 12,
   },
   avatar: {
     width: 90,

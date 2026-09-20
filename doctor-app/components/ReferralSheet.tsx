@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors, Radii, Spacing } from '../constants/theme';
 import { Patient, Referral, Urgency } from '../types';
 import { Avatar, BottomSheet, Button, CheckboxGroup, Chip, Divider, IconButton, Input } from './ui';
@@ -90,11 +90,35 @@ export const ReferralSheet: React.FC<ReferralSheetProps> = ({
         onChange={setDiagnostics}
       />
 
-      <Text style={styles.sectionLabel}>Urgency</Text>
-      <View style={styles.chipWrap}>
-        <Chip label="Routine" tone="primary" size="sm" selected={urgency === 'routine'} onPress={() => setUrgency('routine')} />
-        <Chip label="Priority" tone="navy" size="sm" selected={urgency === 'priority'} onPress={() => setUrgency('priority')} />
-        <Chip label="Emergency" tone="danger" size="sm" selected={urgency === 'emergency'} onPress={() => setUrgency('emergency')} />
+      <Text style={styles.sectionLabel}>Urgency Level</Text>
+      <View style={styles.urgencyRow}>
+        <TouchableOpacity
+          style={[styles.urgencyBtn, urgency === 'routine' && styles.urgencyBtnRoutine]}
+          onPress={() => setUrgency('routine')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.urgencyText, urgency === 'routine' && styles.urgencyTextActive]}>
+            Routine
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.urgencyBtn, urgency === 'priority' && styles.urgencyBtnPriority]}
+          onPress={() => setUrgency('priority')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.urgencyText, urgency === 'priority' && styles.urgencyTextActive]}>
+            Priority
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.urgencyBtn, urgency === 'emergency' && styles.urgencyBtnEmergency]}
+          onPress={() => setUrgency('emergency')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.urgencyText, urgency === 'emergency' && styles.urgencyTextActive]}>
+            Emergency
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <Input
@@ -160,5 +184,41 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 6,
     marginBottom: 4,
+  },
+  urgencyRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginVertical: 4,
+  },
+  urgencyBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: Radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+  },
+  urgencyBtnRoutine: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  urgencyBtnPriority: {
+    backgroundColor: Colors.secondary,
+    borderColor: Colors.secondary,
+  },
+  urgencyBtnEmergency: {
+    backgroundColor: Colors.error,
+    borderColor: Colors.error,
+  },
+  urgencyText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  urgencyTextActive: {
+    color: Colors.white,
+    fontWeight: '700',
   },
 });

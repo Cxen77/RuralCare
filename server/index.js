@@ -26,7 +26,9 @@ const lookupRoutes = require('./routes/lookup.routes');
 const syncRoutes = require('./routes/sync.routes');
 const aiRoutes = require('./routes/ai.routes');
 const presenceRoutes = require('./routes/presence.routes');
+const emergenciesRoutes = require('./routes/emergencies.routes');
 const { initCallSignaling } = require('./services/callSignaling.service');
+const { initSocket } = require('./services/socket.service');
 
 const app = express();
 const startedAt = Date.now();
@@ -71,6 +73,7 @@ app.use('/assets', express.static(path.join(distDir('pharmacy-website'), 'assets
 app.use('/assets', express.static(path.join(distDir('hospital-website'), 'assets')));
 app.use('/pharmacy', express.static(distDir('pharmacy-website')));
 app.use('/hospital', express.static(distDir('hospital-website')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'landing.html')));
 app.get('/pharmacy', (req, res) => res.sendFile(path.join(distDir('pharmacy-website'), 'index.html')));
@@ -110,6 +113,7 @@ const apiLimiter = limited(600, 60 * 1000, 'RATE_LIMITED', 'Too many requests. S
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/ai', apiLimiter, optionalAuth, aiRoutes);
 app.use('/api/presence', apiLimiter, optionalAuth, presenceRoutes);
+app.use('/api/emergencies', apiLimiter, emergenciesRoutes);
 app.get('/api/appointments/availability', apiLimiter, optionalAuth, asyncHandler(appointmentsRoutes.getDoctorAvailabilityHandler));
 
 // ── Protected API ───────────────────────────────────────────────────────
@@ -161,6 +165,9 @@ async function start() {
 
   // Attach WebSocket call signaling to the HTTP server
   initCallSignaling(server);
+
+  // Attach Socket.IO real-time community emergency server
+  initSocket(server);
 }
 
 async function shutdown(signal) {

@@ -10,7 +10,9 @@ export interface MapMarker {
   longitude: number;
   title?: string;
   subtitle?: string;
-  type?: 'patient' | 'doctor' | 'clinic' | 'hospital' | 'pharmacy';
+  type?: 'patient' | 'doctor' | 'clinic' | 'hospital' | 'pharmacy' | 'emergency';
+  emergencyStatus?: 'reported' | 'verified' | 'dispatched' | 'resolved';
+  emergencyType?: string;
 }
 
 export interface MapRoute {
@@ -189,7 +191,7 @@ export const MapView: React.FC<MapViewProps> = ({
         style={styles.map}
         mapStyle={MAP_STYLE}
         logoEnabled={false}
-        attributionPosition={{ bottom: 8, left: 8 }}
+        attributionEnabled={false}
         compassEnabled={false}
         scrollEnabled={interactive}
         zoomEnabled={interactive}

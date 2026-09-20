@@ -361,11 +361,11 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
               style={{ flex: 1 }}
             />
             <Button
-              label="Confirm Location"
+              label="Confirm"
               icon="check"
               variant="primary"
               onPress={handleConfirm}
-              style={{ flex: 2 }}
+              style={{ flex: 1 }}
             />
           </View>
         </View>

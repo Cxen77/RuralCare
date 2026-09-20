@@ -212,6 +212,32 @@ export const MapView: React.FC<MapViewProps> = ({
       100% { transform: scale(1.4); opacity: 0; }
     }
 
+    /* ── Live Community Emergency Pins ── */
+    .emergency-pin-wrap {
+      position: relative;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .emergency-pulse-ring {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      animation: emergency-pulse 1.8s ease-out infinite;
+      pointer-events: none;
+    }
+    @keyframes emergency-pulse {
+      0% { transform: scale(0.85); opacity: 0.85; }
+      70% { transform: scale(1.65); opacity: 0; }
+      100% { transform: scale(1.65); opacity: 0; }
+    }
+
     /* ── Center Pin for Location Picker: Identical to native Android centerPin ── */
     .center-pin-fixed {
       position: absolute;
@@ -245,6 +271,30 @@ export const MapView: React.FC<MapViewProps> = ({
       border-radius: 6px;
       background: rgba(0,0,0,0.25);
       margin-top: 2px;
+    }
+
+    /* ── Hide all attribution, logos, copyright notices, and tags ── */
+    .maplibregl-ctrl-attrib,
+    .maplibregl-ctrl-attrib-inner,
+    .maplibregl-compact,
+    .maplibregl-compact-show,
+    .maplibregl-ctrl-logo,
+    .maplibregl-ctrl-bottom-left,
+    .maplibregl-ctrl-bottom-right,
+    .mapboxgl-ctrl-attrib,
+    .mapboxgl-ctrl-logo,
+    .mapboxgl-ctrl-bottom-left,
+    .mapboxgl-ctrl-bottom-right,
+    a.maplibregl-ctrl-logo,
+    a.mapboxgl-ctrl-logo {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      height: 0 !important;
+      width: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
     }
 
     /* ── MapLibre Popup Styling ── */
@@ -290,8 +340,6 @@ export const MapView: React.FC<MapViewProps> = ({
         interactive: isInteractive,
         attributionControl: false
       });
-
-      map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
 
       map.on('load', function() {
         try {
@@ -369,6 +417,34 @@ export const MapView: React.FC<MapViewProps> = ({
         return wrap;
       }
 
+      function createEmergencyElement(m) {
+        var status = m.emergencyStatus || 'reported';
+        var color = '#DC2626'; // Red = Reported
+        if (status === 'verified') color = '#EA580C'; // Orange = Verified
+        else if (status === 'dispatched') color = '#2563EB'; // Blue = Dispatched
+        else if (status === 'resolved') color = '#16A34A'; // Green = Resolved
+
+        var wrap = document.createElement('div');
+        wrap.className = 'emergency-pin-wrap';
+
+        var pulse = document.createElement('div');
+        pulse.className = 'emergency-pulse-ring';
+        pulse.style.background = color;
+        wrap.appendChild(pulse);
+
+        var inner = document.createElement('div');
+        inner.style.cssText = 'position:relative;width:34px;height:34px;border-radius:50%;background:' + color + ';border:3px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:2;';
+        // Emergency siren / hazard beacon SVG icon
+        inner.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M12 2c-4.42 0-8 3.58-8 8v4l-2 2v1h20v-1l-2-2v-4c0-4.42-3.58-8-8-8zm0 20c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2z"/></svg>';
+        wrap.appendChild(inner);
+
+        wrap.addEventListener('click', function(e) {
+          e.stopPropagation();
+          notify({ type: 'MARKER_PRESS', id: m.id });
+        });
+        return wrap;
+      }
+
       function syncMarkers(markersList) {
         activeMarkers.forEach(function(m) { m.remove(); });
         activeMarkers = [];
@@ -384,6 +460,8 @@ export const MapView: React.FC<MapViewProps> = ({
             el = createPharmacyElement(item);
           } else if (item.type === 'hospital') {
             el = createHospitalElement(item);
+          } else if (item.type === 'emergency') {
+            el = createEmergencyElement(item);
           } else {
             el = createDoctorElement(item);
           }

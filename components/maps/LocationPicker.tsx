@@ -348,13 +348,15 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
 
           <Card radius={Radii.md} style={styles.addressCard}>
             <View style={styles.addressRow}>
-              <MaterialIcons name="place" size={20} color={Colors.primary} />
+              <View style={styles.addressIconWrap}>
+                <MaterialIcons name="place" size={18} color={Colors.primary} />
+              </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.addressLabel}>SELECTED LOCATION</Text>
                 {resolvingAddress ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
                     <ActivityIndicator size="small" color={Colors.primary} />
-                    <Text style={styles.resolvingText}>Finding address...</Text>
+                    <Text style={styles.resolvingText}>Resolving address...</Text>
                   </View>
                 ) : (
                   <Text style={styles.addressText} numberOfLines={2}>
@@ -373,14 +375,14 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
               label="Cancel"
               variant="outline"
               onPress={onClose}
-              style={{ flex: 1, marginRight: Spacing.sm }}
+              style={styles.footerBtn}
             />
             <Button
-              label="Confirm Location"
+              label="Confirm"
               icon="check"
               variant="primary"
               onPress={handleConfirm}
-              style={{ flex: 1.5 }}
+              style={styles.footerBtn}
             />
           </View>
         </View>
@@ -392,23 +394,26 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(15, 28, 36, 0.65)',
     justifyContent: 'flex-end',
   },
   modalCard: {
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.white,
     borderTopLeftRadius: Radii.xl,
     borderTopRightRadius: Radii.xl,
     padding: Spacing.md,
     gap: 12,
-    maxHeight: '90%',
+    maxHeight: '92%',
+    width: '100%',
+    maxWidth: Platform.OS === 'web' ? 560 : undefined,
+    alignSelf: 'center',
     ...Shadows.lg,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingBottom: 4,
+    paddingBottom: 2,
   },
   headerTitleRow: {
     flexDirection: 'row',
@@ -417,20 +422,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.primaryLight,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
     alignItems: 'center',
     justifyContent: 'center',
   },
   title: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 16.5,
+    fontWeight: '800',
     color: Colors.secondary,
   },
   subtitle: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: Colors.onSurfaceVariant,
     marginTop: 1,
   },
@@ -455,6 +462,9 @@ const styles = StyleSheet.create({
     position: 'relative',
     borderRadius: Radii.lg,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.outlineLight,
+    ...Shadows.sm,
   },
   gpsFab: {
     position: 'absolute',
@@ -463,42 +473,52 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: Colors.surface,
-    paddingHorizontal: 12,
+    backgroundColor: Colors.white,
+    paddingHorizontal: 13,
     paddingVertical: 8,
     borderRadius: Radii.full,
     ...Shadows.md,
     borderWidth: 1,
-    borderColor: Colors.outlineLight,
+    borderColor: '#E2E8F0',
   },
   gpsFabText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
     color: Colors.primary,
   },
   addressCard: {
     padding: 12,
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: Colors.outlineLight,
+    borderColor: '#E2E8F0',
   },
   addressRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
   },
+  addressIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
   addressLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: Colors.onSurfaceVariant,
+    fontSize: 10,
+    fontWeight: '800',
+    color: Colors.primary,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   addressText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
     color: Colors.secondary,
     marginTop: 2,
+    lineHeight: 18,
   },
   resolvingText: {
     fontSize: 12,
@@ -507,15 +527,18 @@ const styles = StyleSheet.create({
   },
   coordsText: {
     fontSize: 11,
-    color: Colors.onSurfaceVariant,
-    marginTop: 2,
+    color: Colors.outline,
+    marginTop: 3,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     marginTop: 4,
     paddingBottom: Platform.OS === 'ios' ? 16 : 4,
+  },
+  footerBtn: {
+    flex: 1,
   },
 });

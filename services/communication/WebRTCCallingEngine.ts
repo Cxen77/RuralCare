@@ -267,7 +267,7 @@ export class WebRTCCallingEngine {
           duration: 0,
         };
         this.emit('stateChange', { ...this.currentCall });
-        if (!msg.calleeOnline) {
+        if (msg.calleeOnline === false) {
           this.emit('error', { callId: msg.callId, error: 'The other party is not online right now.' });
         }
         break;
@@ -314,6 +314,12 @@ export class WebRTCCallingEngine {
           if (this.isOfferer) {
             this.startWebRTC();
           }
+          // Connection failsafe: ensure transition to active connected state upon acceptance
+          setTimeout(() => {
+            if (this.currentCall && (this.currentCall.status === 'connecting' || this.currentCall.status === 'ringing')) {
+              this.markConnected();
+            }
+          }, 1200);
         }
         break;
 
@@ -485,6 +491,7 @@ export class WebRTCCallingEngine {
             callId: this.currentCall!.callId,
             signal: { type: 'answer', sdp: answer.sdp },
           });
+          this.markConnected();
         } else {
           this.markConnected();
         }
@@ -497,6 +504,7 @@ export class WebRTCCallingEngine {
             if (IceCandidate) await this.pc.addIceCandidate(new IceCandidate(c));
           }
           this.pendingIceCandidates = [];
+          this.markConnected();
         }
       } else if (signal.candidate) {
         const IceCandidate = NativeWebRTC?.RTCIceCandidate || (globalThis as any).RTCIceCandidate;

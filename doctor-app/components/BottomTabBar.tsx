@@ -3,7 +3,7 @@ import { Text, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing } from '../constants/theme';
 
-export type DoctorTab = 'today' | 'patients' | 'consult' | 'rx' | 'profile';
+export type DoctorTab = 'today' | 'patients' | 'consult' | 'rx' | 'emergencies' | 'profile';
 
 interface BottomTabBarProps {
   activeTab: DoctorTab;
@@ -13,6 +13,7 @@ interface BottomTabBarProps {
 const TABS: { id: DoctorTab; label: string; icon: keyof typeof MaterialIcons.glyphMap }[] = [
   { id: 'today', label: 'Today', icon: 'dashboard' },
   { id: 'patients', label: 'Patients', icon: 'people' },
+  { id: 'emergencies', label: 'Emergency', icon: 'emergency' },
   { id: 'rx', label: 'Rx', icon: 'receipt-long' },
   { id: 'profile', label: 'Profile', icon: 'person' },
 ];

@@ -25,6 +25,7 @@ import { Patient, Appointment } from '../types';
 import { Avatar, Badge, Button, Card, Chip, Input } from '../components/ui';
 import { AppointmentChatModal } from '../components/communication/AppointmentChatModal';
 import { CallModal } from '../components/communication/CallModal';
+import { DoctorHealthPassportModal } from '../components/DoctorHealthPassportModal';
 import { CallType } from '../services/communication/WebRTCCallingEngine';
 import { api } from '../services/api';
 
@@ -73,6 +74,7 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
   const [videoApptId, setVideoApptId] = useState<string | null>(null);
   const [videoParticipant, setVideoParticipant] = useState('');
   const [callType, setCallType] = useState<CallType>('video');
+  const [selectedPassportPatient, setSelectedPassportPatient] = useState<{ id: string; name: string } | null>(null);
 
   const toggleExpand = (id: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -241,11 +243,11 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
                       <View style={styles.modeTimePill}>
                         <MaterialIcons
                           name={item.mode === 'video' ? 'videocam' : 'location-on'}
-                          size={11}
+                          size={12}
                           color={item.mode === 'video' ? Colors.primary : Colors.secondary}
                         />
                         <Text style={styles.modeTimeText}>
-                          {isDone ? 'Consulted' : isInConsult ? 'In Consult' : item.dateStr}
+                          {isDone ? 'Consulted' : isInConsult ? 'In Consult' : item.mode === 'video' ? 'Video Visit' : 'In Clinic'}
                         </Text>
                       </View>
                     </View>
@@ -253,6 +255,11 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
                     <Text style={styles.patientDemographics} numberOfLines={1}>
                       {patient.age ? `${patient.age}y` : ''}{patient.gender ? ` / ${patient.gender}` : ''}{patient.village ? ` • ${patient.village}` : ''} • ABHA: {(patient.abhaId || 'Active').slice(0, 8)}...
                     </Text>
+
+                    <View style={styles.scheduleRow}>
+                      <MaterialIcons name="event" size={12} color={Colors.primary} />
+                      <Text style={styles.scheduleText}>{item.dateStr}</Text>
+                    </View>
                   </View>
 
                   {/* Expand / Collapse Chevron Toggle */}
@@ -268,6 +275,26 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
                 {/* Fully Expanded Details - Matching TodayScreen Workbench Component */}
                 {isExpanded && (
                   <View style={styles.expandedSection}>
+                    {/* Appointment Schedule Banner */}
+                    <View style={styles.scheduleDetailBox}>
+                      <View style={styles.scheduleDetailLeft}>
+                        <MaterialIcons name="event-available" size={15} color={Colors.primary} />
+                        <Text style={styles.scheduleDetailText}>
+                          Scheduled: {item.dateStr}
+                        </Text>
+                      </View>
+                      <View style={styles.scheduleModeBadge}>
+                        <MaterialIcons
+                          name={item.mode === 'video' ? 'videocam' : 'location-on'}
+                          size={12}
+                          color={Colors.primary}
+                        />
+                        <Text style={styles.scheduleModeText}>
+                          {item.mode === 'video' ? 'Teleconsult' : 'In-Person'}
+                        </Text>
+                      </View>
+                    </View>
+
                     {/* Chief Complaint Box */}
                     <View style={styles.complaintContainer}>
                       <Text style={styles.complaintLabel}>Reason for Visit</Text>
@@ -341,6 +368,19 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
                       </View>
                     )}
 
+                    {/* View Health Passport Button */}
+                    <TouchableOpacity
+                      style={styles.passportBtn}
+                      onPress={() => setSelectedPassportPatient({ id: patient.id, name: patient.name })}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.passportBtnLeft}>
+                        <MaterialIcons name="badge" size={16} color={Colors.primary} />
+                        <Text style={styles.passportBtnText}>View Health Passport</Text>
+                      </View>
+                      <MaterialIcons name="chevron-right" size={16} color={Colors.primary} />
+                    </TouchableOpacity>
+
                     {/* Consultation Action Trigger */}
                     {!isDone ? (
                       <Button
@@ -364,7 +404,7 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
                         onPress={() => handleDelete(item.appointmentId, patient.name)}
                         activeOpacity={0.7}
                       >
-                        <MaterialIcons name="delete-outline" size={15} color={Colors.error} />
+                        <MaterialIcons name="delete-outline" size={16} color={Colors.white} />
                         <Text style={styles.deleteBtnText}>Delete Appointment</Text>
                       </TouchableOpacity>
                     )}
@@ -412,6 +452,14 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
         peerName={videoParticipant}
         appointmentId={videoApptId || ''}
         callType={callType}
+      />
+
+      {/* Doctor Health Passport Modal */}
+      <DoctorHealthPassportModal
+        visible={!!selectedPassportPatient}
+        patientId={selectedPassportPatient?.id || ''}
+        patientName={selectedPassportPatient?.name}
+        onClose={() => setSelectedPassportPatient(null)}
       />
     </>
   );
@@ -491,6 +539,54 @@ const styles = StyleSheet.create({
     color: Colors.onSurfaceVariant,
     marginTop: 2,
   },
+  scheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3,
+  },
+  scheduleText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  scheduleDetailBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: Radii.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  scheduleDetailLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  scheduleDetailText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  scheduleModeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#E6F4F1',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radii.full,
+  },
+  scheduleModeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
   expandToggleBtn: {
     width: 32,
     height: 32,
@@ -556,14 +652,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: Radii.sm,
+    paddingVertical: 2,
   },
   allergyAlertText: {
     fontSize: 11,
-    color: Colors.error,
+    color: '#DC2626',
     fontWeight: '600',
   },
   commRow: {
@@ -645,15 +738,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 8,
-    marginTop: 4,
+    height: 40,
+    marginTop: 8,
     borderRadius: Radii.md,
-    backgroundColor: 'transparent',
+    backgroundColor: '#DC2626',
   },
   deleteBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.error,
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.white,
   },
   emptyContainer: {
     alignItems: 'center',
@@ -672,5 +765,28 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 32,
     lineHeight: 18,
+  },
+  passportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: Radii.md,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  passportBtnLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  passportBtnText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: Colors.primary,
   },
 });

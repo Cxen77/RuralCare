@@ -43,6 +43,7 @@ export interface AIRouterResponse {
   formattedTriageNote?: string;
   doctors?: any[];
   pharmacies?: any[];
+  hospitals?: any[];
   route?: any;
   confirmationNeeded?: any;
   intent?: string;

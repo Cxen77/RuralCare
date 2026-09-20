@@ -228,6 +228,7 @@ export const apiClient = {
   getDoctor: (id: string) => request<any>('GET', `/doctors/${id}`),
   getPharmacies: () => request<any[]>('GET', '/pharmacies'),
   getPatient: (id: string) => request<any>('GET', `/patients/${id}`),
+  getHealthPassport: (id: string) => request<any>('GET', `/patients/${id}/health-passport`),
   updatePatient: (id: string, data: unknown) => request<any>('PATCH', `/patients/${id}`, data),
   getHospitals: () => request<any[]>('GET', '/hospitals'),
   getHospital: (id: string) => request<any>('GET', `/hospitals/${id}`),
@@ -256,6 +257,8 @@ export const apiClient = {
   createPrescription: (data: unknown) => request<any>('POST', '/prescriptions', data),
   updatePrescription: (id: string, data: unknown) =>
     request<any>('PATCH', `/prescriptions/${id}`, data),
+  deletePrescription: (id: string) =>
+    request<any>('DELETE', `/prescriptions/${id}`),
 
   // Pharmacy fulfilment & Matching
   getPharmacyRequests: (params: { pharmacyId?: string; status?: string } = {}) =>

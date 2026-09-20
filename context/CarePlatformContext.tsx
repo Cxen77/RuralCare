@@ -82,6 +82,7 @@ interface CarePlatformState {
     pharmacyId: string,
     matchResult: PharmacyMatchResult
   ) => Promise<ReserveMedicinesResult>;
+  deletePrescription: (prescriptionId: string) => Promise<void>;
   getPharmacyMatches: (prescriptionId: string) => PharmacyMatchResult[];
   getPharmacyMatchesAsync: (prescriptionId: string) => Promise<PharmacyMatchResult[]>;
 
@@ -334,6 +335,21 @@ export const CarePlatformProvider: React.FC<ProviderProps> = ({ children }) => {
     [prescriptions, pharmacies, isOnline]
   );
 
+  const deletePrescription = useCallback(
+    async (prescriptionId: string) => {
+      setPrescriptions(prev => prev.filter(p => p.id !== prescriptionId));
+      setReservations(prev => prev.filter(r => r.prescriptionId !== prescriptionId));
+      if (isOnline) {
+        try {
+          await apiClient.deletePrescription(prescriptionId);
+        } catch {
+          // ignore or fallback
+        }
+      }
+    },
+    [isOnline]
+  );
+
   // ─── Emergency SOS ─────────────────────────────────────────────────────
   const triggerSos = useCallback(async () => {
     if (!patient) return;
@@ -398,6 +414,7 @@ export const CarePlatformProvider: React.FC<ProviderProps> = ({ children }) => {
     bookAppointment,
     cancelAppointment,
     reserveMedicines,
+    deletePrescription,
     getPharmacyMatches,
     getPharmacyMatchesAsync,
     triggerSos,

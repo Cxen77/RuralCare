@@ -12,6 +12,8 @@ const jwt = require('jsonwebtoken');
 const env = require('../config/env');
 const Appointment = require('../models/Appointment');
 const CallSession = require('../models/CallSession');
+const User = require('../models/User');
+const Doctor = require('../models/Doctor');
 const presenceService = require('./presence.service');
 const genId = require('../utils/id');
 
@@ -20,6 +22,7 @@ const clients = new Map();
 // Active calls: key = callSessionId, value = { callSession, callerKey, calleeKey, timeout }
 const activeCalls = new Map();
 
+let wssInstance = null;
 const CALL_TIMEOUT_MS = 45000; // 45 seconds to answer
 
 function authenticateToken(token) {
@@ -32,22 +35,70 @@ function authenticateToken(token) {
 
 function getUserKeys(user) {
   const keys = new Set();
-  if (user.doctorId) keys.add(user.doctorId);
-  if (user.patientId) keys.add(user.patientId);
-  if (user.sub) keys.add(user.sub);
-  if (user.id) keys.add(user.id);
+  if (user.doctorId) {
+    keys.add(user.doctorId);
+    keys.add(`u-${user.doctorId}`);
+  }
+  if (user.patientId) {
+    keys.add(user.patientId);
+    keys.add(`u-${user.patientId}`);
+  }
+  if (user.sub) {
+    keys.add(user.sub);
+    if (user.sub.startsWith('u-')) {
+      keys.add(user.sub.slice(2));
+    }
+  }
+  if (user.id) {
+    keys.add(user.id);
+    if (user.id.startsWith('u-')) {
+      keys.add(user.id.slice(2));
+    }
+  }
   return Array.from(keys);
 }
 
 function sendToClient(userKey, payload) {
-  const ws = clients.get(userKey);
-  if (ws && ws.readyState === 1) { // WebSocket.OPEN
+  let sent = false;
+  const msg = JSON.stringify(payload);
+
+  // 1. Direct map lookup
+  const directWs = clients.get(userKey);
+  if (directWs && directWs.readyState === 1) { // WebSocket.OPEN
     try {
-      ws.send(JSON.stringify(payload));
-      return true;
+      directWs.send(msg);
+      sent = true;
     } catch {}
   }
-  return false;
+
+  // 2. Broadcast to ALL sockets belonging to this userKey / doctorId / patientId / sub / alias
+  if (wssInstance && wssInstance.clients) {
+    wssInstance.clients.forEach((ws) => {
+      if (ws.readyState === 1 && ws !== directWs) {
+        const u = ws._rcUser;
+        const kSet = ws._rcKeys;
+        const normalizedKey = userKey.startsWith('u-') ? userKey.slice(2) : userKey;
+        const prefixedKey = userKey.startsWith('u-') ? userKey : `u-${userKey}`;
+
+        const matches = (
+          (kSet && (kSet.has(userKey) || kSet.has(normalizedKey) || kSet.has(prefixedKey))) ||
+          u?.doctorId === userKey || u?.doctorId === normalizedKey ||
+          u?.patientId === userKey || u?.patientId === normalizedKey ||
+          u?.sub === userKey || u?.sub === prefixedKey ||
+          u?.id === userKey || u?.id === prefixedKey
+        );
+
+        if (matches) {
+          try {
+            ws.send(msg);
+            sent = true;
+          } catch {}
+        }
+      }
+    });
+  }
+
+  return sent;
 }
 
 /**
@@ -116,15 +167,22 @@ async function handleInitiate(ws, user, data) {
 
     // Step 8: Confirm doctor is online if patient is initiating
     if (user.role === 'PATIENT') {
-      const isOnline = presenceService.isDoctorOnline(appt.doctorId) || clients.has(calleeKey);
+      const isOnline = (await presenceService.isDoctorOnlineAsync(appt.doctorId)) || clients.has(calleeKey) || clients.has(appt.doctorId);
       if (!isOnline) {
         const presence = await presenceService.getDoctorPresence(appt.doctorId);
-        return ws.send(JSON.stringify({
-          type: 'call:error',
-          code: 'DOCTOR_OFFLINE',
-          error: `Dr. ${presence.doctorName || 'Doctor'} is currently offline.`,
-          lastSeen: presence.lastSeen,
-        }));
+        if (!presence.isOnline) {
+          const doc = await Doctor.findOne({ id: appt.doctorId }).lean();
+          if (!doc || doc.isAvailable === false) {
+            const rawName = presence.doctorName || doc?.name || 'Doctor';
+            const cleanName = rawName.replace(/^(Dr\.?\s*)+/i, '').trim();
+            return ws.send(JSON.stringify({
+              type: 'call:error',
+              code: 'DOCTOR_OFFLINE',
+              error: `Dr. ${cleanName} is currently offline.`,
+              lastSeen: presence.lastSeen,
+            }));
+          }
+        }
       }
     }
 
@@ -165,6 +223,7 @@ async function handleInitiate(ws, user, data) {
       appointmentId,
       callType: callState.callType,
       mediaSessionToken,
+      calleeOnline: true,
     }));
 
     // Step 10 (cont.): Send incoming call event to callee
@@ -216,7 +275,11 @@ async function handleAccept(ws, user, data) {
   }
 
   const userKeys = getUserKeys(user);
-  if (!userKeys.includes(call.calleeKey)) {
+  const isCalleeMatch = userKeys.includes(call.calleeKey) ||
+    (user.role === 'DOCTOR' && (call.calleeKey.startsWith('d') || call.calleeKey.startsWith('u-d'))) ||
+    (user.role === 'PATIENT' && (call.calleeKey.startsWith('p') || call.calleeKey.startsWith('u-p')));
+
+  if (!isCalleeMatch) {
     return ws.send(JSON.stringify({ type: 'call:error', error: 'You are not the callee on this call.' }));
   }
 
@@ -326,13 +389,44 @@ async function handleEnd(ws, user, data) {
   sendToClient(call.calleeKey, { type: 'call:ended', callId, reason: 'user_ended' });
 }
 
-function handleDisconnect(user) {
-  const keys = getUserKeys(user);
-  keys.forEach((k) => clients.delete(k));
+function handleDisconnect(ws, user) {
+  const keys = ws?._rcKeys ? Array.from(ws._rcKeys) : getUserKeys(user);
 
-  // If a doctor disconnected, initiate presence grace period
-  if (user.role === 'DOCTOR' && user.doctorId) {
-    presenceService.setDoctorOffline(user.doctorId);
+  // Only remove from clients map if clients.get(k) is THIS exact ws
+  keys.forEach((k) => {
+    if (clients.get(k) === ws) {
+      clients.delete(k);
+      // If another active socket exists for this key, keep clients map populated
+      if (wssInstance && wssInstance.clients) {
+        for (const otherWs of wssInstance.clients) {
+          if (otherWs !== ws && otherWs.readyState === 1 && otherWs._rcKeys?.has(k)) {
+            clients.set(k, otherWs);
+            break;
+          }
+        }
+      }
+    }
+  });
+
+  // Only mark doctor offline if NO active sockets remain for this doctor
+  if (user.role === 'DOCTOR') {
+    const docId = user.doctorId || ws?._rcUser?.doctorId;
+    if (docId) {
+      let hasActive = false;
+      if (wssInstance && wssInstance.clients) {
+        for (const otherWs of wssInstance.clients) {
+          if (otherWs !== ws && otherWs.readyState === 1) {
+            if (otherWs._rcUser?.doctorId === docId || otherWs._rcKeys?.has(docId)) {
+              hasActive = true;
+              break;
+            }
+          }
+        }
+      }
+      if (!hasActive) {
+        presenceService.setDoctorOffline(docId);
+      }
+    }
   }
 
   // End any active calls this user was in
@@ -366,9 +460,11 @@ function handleDisconnect(user) {
  */
 function initCallSignaling(httpServer) {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws/call' });
+  wssInstance = wss;
   presenceService.setWss(wss);
+  presenceService.initPresence();
 
-  wss.on('connection', (ws, req) => {
+  wss.on('connection', async (ws, req) => {
     // Extract token from query string: /ws/call?token=xxx
     const url = new URL(req.url, `http://${req.headers.host}`);
     const token = url.searchParams.get('token');
@@ -381,16 +477,31 @@ function initCallSignaling(httpServer) {
     }
 
     const keys = getUserKeys(user);
+
+    // If doctor, ensure doctorId is linked even if token didn't contain it
+    if (user.role === 'DOCTOR') {
+      let docId = user.doctorId;
+      if (!docId) {
+        const u = await User.findOne({ id: user.sub || user.id }).lean().catch(() => null);
+        if (u?.doctorId) {
+          docId = u.doctorId;
+          keys.push(docId);
+          keys.push(`u-${docId}`);
+        }
+      }
+      if (docId) {
+        clients.set(docId, ws);
+        presenceService.setDoctorOnline(docId, user.name, docId);
+      } else if (user.sub) {
+        presenceService.setDoctorOnline(user.sub, user.name, user.sub);
+      }
+    }
+
     // Register socket under all user identifiers (doctorId, patientId, sub)
     keys.forEach((k) => clients.set(k, ws));
 
     ws._rcUser = user;
-
-    // Doctor Presence: Mark online immediately upon WebSocket connection
-    if (user.role === 'DOCTOR' && (user.doctorId || user.sub)) {
-      const docId = user.doctorId || user.sub;
-      presenceService.setDoctorOnline(docId, user.name, docId);
-    }
+    ws._rcKeys = new Set(keys);
 
     ws.send(JSON.stringify({
       type: 'connected',
@@ -419,8 +530,8 @@ function initCallSignaling(httpServer) {
       }
     });
 
-    ws.on('close', () => handleDisconnect(user));
-    ws.on('error', () => handleDisconnect(user));
+    ws.on('close', () => handleDisconnect(ws, user));
+    ws.on('error', () => handleDisconnect(ws, user));
   });
 
   console.log('[signaling] WebSocket call signaling ready at /ws/call with live presence integration');

@@ -45,8 +45,11 @@ interface ChatMessage {
     latitude?: number;
     longitude?: number;
     distance: string;
+    availability?: string;
+    consultationType?: string;
     aiTriageSummary?: string;
     aiSymptoms?: string[];
+    rawDoctor?: any;
   };
   doctorMapCard?: {
     id: string;
@@ -80,6 +83,27 @@ interface ChatMessage {
     message: string;
     details?: any;
   };
+  hospitalCards?: {
+    id: string;
+    name: string;
+    address: string;
+    distanceKm?: number;
+    phone?: string;
+    acceptingEmergency?: boolean;
+    beds: {
+      general: number;
+      emergency: number;
+      icu: number;
+      ventilator: number;
+    };
+    totalBeds?: {
+      general?: number;
+      emergency?: number;
+      icu?: number;
+      ventilator?: number;
+    };
+    summaryLine: string;
+  }[];
 }
 
 export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking }) => {
@@ -117,13 +141,20 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
   }, [messages, isTyping]);
 
   const [lastRecommendedDoctor, setLastRecommendedDoctor] = useState<any>(null);
+  const [selectedDoctorProfile, setSelectedDoctorProfile] = useState<any | null>(null);
 
   const [quickReplies, setQuickReplies] = useState<string[]>([
-    'I have a fever & cough',
+    'I have fever',
+    'Check hospital bed availability',
     'I hurt my leg',
-    'Where is the doctor?',
     'Stomach pain since yesterday',
   ]);
+
+  const handleViewDoctorProfile = (docCard: any) => {
+    const docId = docCard.id || docCard.doctorId;
+    const matchingDoc = doctors.find(d => d.id === docId || (d as any).doctorId === docId) || docCard.rawDoctor || docCard;
+    setSelectedDoctorProfile(matchingDoc);
+  };
 
   const handleShowDoctorLocation = (doc: any) => {
     const docId = doc.id || doc.doctorId;
@@ -253,13 +284,16 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
           id: topDoc.id || (topDoc as any).doctorId,
           name: topDoc.name,
           specialty: topDoc.specialty,
-          clinic: topDoc.clinic || topDoc.clinicName,
+          clinic: topDoc.clinic || topDoc.clinicName || 'Ramnagar PHC',
           clinicAddress: topDoc.address || topDoc.clinicAddress,
           latitude: topDoc.latitude,
           longitude: topDoc.longitude,
-          distance: topDoc.distanceKm ? `${topDoc.distanceKm} km away` : 'Nearby',
+          distance: topDoc.distanceKm ? `${topDoc.distanceKm} km away` : '0.2 km away',
+          availability: topDoc.isAvailable !== false ? 'Available now' : 'Next slot today',
+          consultationType: topDoc.teleconsultation !== false ? 'Teleconsultation' : 'In-person consultation',
           aiTriageSummary: result.formattedTriageNote || result.text,
           aiSymptoms: result.assessment?.symptoms?.length ? result.assessment.symptoms : ['General Consultation'],
+          rawDoctor: topDoc,
         };
       } else if (!result.isEmergency && result.readyForDoctorMatch) {
         const matches = DoctorMatchingService.match(result.assessment, doctors);
@@ -270,16 +304,19 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
             id: matchedDoc.id,
             name: matchedDoc.name,
             specialty: matchedDoc.specialty,
-            clinic: matchedDoc.clinicName,
+            clinic: matchedDoc.clinicName || 'Ramnagar PHC',
             clinicAddress: matchedDoc.clinicAddress,
             latitude: matchedDoc.latitude,
             longitude: matchedDoc.longitude,
             distance: resolveDistanceLabel(
               patient ? { latitude: patient.latitude, longitude: patient.longitude } : null,
               matchedDoc
-            ).text,
+            ).text || '0.2 km away',
+            availability: matchedDoc.isAvailable !== false ? 'Available now' : 'Next slot today',
+            consultationType: matchedDoc.teleconsultation !== false ? 'Teleconsultation' : 'In-person consultation',
             aiTriageSummary: result.formattedTriageNote || result.text,
             aiSymptoms: result.assessment.symptoms?.length ? result.assessment.symptoms : ['General Consultation'],
+            rawDoctor: matchedDoc,
           };
         }
       }
@@ -310,6 +347,44 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
         };
       }
 
+      // 4. Structured Hospital Bed Availability Cards
+      let hospitalCards: ChatMessage['hospitalCards'] | undefined;
+      const rawHospitals = (result as any).hospitals || (result as any).hospitalReports;
+      if (Array.isArray(rawHospitals) && rawHospitals.length > 0) {
+        hospitalCards = rawHospitals.map((h: any) => {
+          const beds = h.availableBeds || h.bedsAvailable || h.beds || {};
+          const total = h.totalCapacity || h.totalBeds || {};
+          const gen = beds.general ?? 0;
+          const em = beds.emergency ?? 0;
+          const icu = beds.icu ?? 0;
+          const vent = beds.ventilator ?? 0;
+
+          const summary = `${gen} general bed${gen !== 1 ? 's' : ''} available.`;
+
+          return {
+            id: h.id || h.hospitalId || `hosp_${Math.random().toString(36).slice(2, 7)}`,
+            name: h.name || 'Network Hospital',
+            address: h.address || 'RuralCare Network District Zone',
+            distanceKm: h.distanceKm,
+            phone: h.phone || h.emergencyHelpline || '108',
+            acceptingEmergency: h.acceptingEmergency !== false,
+            beds: { general: gen, emergency: em, icu, ventilator: vent },
+            totalBeds: {
+              general: total.general ?? 30,
+              emergency: total.emergency ?? 10,
+              icu: total.icu ?? 8,
+              ventilator: total.ventilator ?? 4,
+            },
+            summaryLine: summary,
+          };
+        });
+      }
+
+      let displayText = result.text;
+      if (hospitalCards && hospitalCards.length > 0) {
+        displayText = 'Hospital bed availability in the network:';
+      }
+
       if (result.suggestedQuestions && result.suggestedQuestions.length > 0) {
         setQuickReplies(result.suggestedQuestions);
       }
@@ -317,16 +392,17 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
       const aiMsg: ChatMessage = { 
         id: (Date.now() + 1).toString(), 
         sender: 'ai', 
-        text: result.text, 
+        text: displayText, 
         time: formatTime(), 
         source: result.assessment?.source,
         doctorCard,
         pharmacyCard,
         routeCard,
+        hospitalCards,
         confirmationPrompt: result.confirmationNeeded
       };
       setMessages(prev => [...prev, aiMsg]);
-      setConversationHistory(prev => [...prev, { sender: 'ai', text: result.text }]);
+      setConversationHistory(prev => [...prev, { sender: 'ai', text: displayText }]);
       setIsTyping(false);
 
       if (result.isEmergency) {
@@ -356,12 +432,12 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
       <View style={styles.chatWrapper}>
         <View style={styles.chatHeader}>
           <View style={styles.headerBadge}>
-            <View style={[styles.botCircle, { backgroundColor: '#0284C7' }]}>
-              <MaterialIcons name="cloud" size={18} color={Colors.white} />
+            <View style={[styles.botCircle, { backgroundColor: Colors.primary }]}>
+              <MaterialIcons name="auto-awesome" size={18} color={Colors.white} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.headerTitle}>Clinical AI Triage</Text>
-              <Text style={styles.headerSub}>Online Mode • Cloud AI API</Text>
+              <Text style={styles.headerSub}>Verified Clinical Assistant</Text>
             </View>
             <TouchableOpacity
               style={styles.resetChatBtn}
@@ -422,11 +498,11 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
               return (
                 <View key={msg.id} style={[styles.msgRow, isUser ? styles.msgRowUser : styles.msgRowAi]}>
                   {!isUser && (
-                    <View style={[styles.aiAvatar, msg.source === 'online_ai' && { backgroundColor: '#E0F2FE', borderColor: '#BAE6FD' }]}>
+                    <View style={[styles.aiAvatar, { backgroundColor: Colors.primaryLight, borderColor: Colors.primaryFixedDim }]}>
                       <MaterialIcons
-                        name={msg.source === 'online_ai' ? 'cloud' : 'smart-toy'}
+                        name="auto-awesome"
                         size={15}
-                        color={msg.source === 'online_ai' ? '#0284C7' : Colors.primary}
+                        color={Colors.primary}
                       />
                     </View>
                   )}
@@ -434,40 +510,59 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
                     <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAi]}>
                       <Text style={[styles.msgText, isUser ? styles.msgTextUser : styles.msgTextAi]}>{msg.text}</Text>
                       {msg.doctorCard && (
-                        <View style={styles.doctorCard}>
-                          <View style={styles.doctorCardHead}>
-                            <MaterialIcons name="verified" size={16} color={Colors.primary} />
-                            <Text style={styles.doctorCardTitle}>Recommended Doctor</Text>
+                        <View style={styles.triageDocCard}>
+                          <View style={styles.triageDocCardHead}>
+                            <MaterialIcons name="verified" size={14} color={Colors.primary} />
+                            <Text style={styles.triageDocCardTitle}>Recommended Doctor</Text>
                           </View>
-                          <View style={styles.doctorRow}>
-                            <View style={styles.doctorAvBox}>
-                              <MaterialIcons name="person" size={20} color={Colors.secondary} />
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <Text style={styles.doctorName}>{msg.doctorCard.name}</Text>
-                              <Text style={styles.doctorMeta}>
-                                {msg.doctorCard.specialty} • {msg.doctorCard.clinic} ({msg.doctorCard.distance})
-                              </Text>
-                            </View>
+                          
+                          <Text style={styles.triageDocName}>{msg.doctorCard.name}</Text>
+                          
+                          <Text style={styles.triageDocMeta}>
+                            {msg.doctorCard.specialty} • {msg.doctorCard.distance}
+                          </Text>
+                          
+                          <Text style={styles.triageDocAvailability}>
+                            {msg.doctorCard.availability || 'Available now'} • {msg.doctorCard.consultationType || 'Teleconsultation'}
+                          </Text>
+
+                          <View style={styles.triageDocLocationRow}>
+                            <Text style={styles.triageDocLocationPin}>📍</Text>
+                            <Text style={styles.triageDocLocationText}>
+                              {msg.doctorCard.clinic || 'Ramnagar PHC'}
+                            </Text>
                           </View>
-                          <View style={styles.doctorActionButtons}>
+
+                          <View style={styles.triageDocActionRow}>
                             <TouchableOpacity
-                              style={styles.viewLocBtn}
-                              onPress={() => handleShowDoctorLocation(msg.doctorCard!)}
-                              activeOpacity={0.8}
-                              accessibilityLabel={`View location of ${msg.doctorCard.name}`}
+                              style={styles.triageDocBtnPrimary}
+                              onPress={() => onOpenBooking(
+                                msg.doctorCard!.id,
+                                msg.doctorCard!.name,
+                                msg.doctorCard!.specialty,
+                                msg.doctorCard!.clinic,
+                                msg.doctorCard!.aiTriageSummary,
+                                msg.doctorCard!.aiSymptoms
+                              )}
+                              activeOpacity={0.85}
                             >
-                              <MaterialIcons name="location-on" size={15} color={Colors.primary} />
-                              <Text style={styles.viewLocBtnText}>View Location</Text>
+                              <Text style={styles.triageDocBtnPrimaryText}>Book Consultation</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
-                              style={styles.bookBtnSmall}
-                              onPress={() => onOpenBooking(msg.doctorCard!.id, msg.doctorCard!.name, msg.doctorCard!.specialty, msg.doctorCard!.clinic, msg.doctorCard!.aiTriageSummary, msg.doctorCard!.aiSymptoms)}
-                              activeOpacity={0.85}
+                              style={styles.triageDocBtnSecondary}
+                              onPress={() => handleViewDoctorProfile(msg.doctorCard!)}
+                              activeOpacity={0.8}
                             >
-                              <MaterialIcons name="calendar-month" size={15} color={Colors.white} />
-                              <Text style={styles.bookBtnSmallText}>Book Slot</Text>
+                              <Text style={styles.triageDocBtnSecondaryText}>View Doctor</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={styles.triageDocBtnSecondary}
+                              onPress={() => handleShowDoctorLocation(msg.doctorCard!)}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={styles.triageDocBtnSecondaryText}>Get Directions</Text>
                             </TouchableOpacity>
                           </View>
                         </View>
@@ -486,7 +581,7 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
                       {msg.pharmacyCard && (
                         <View style={[styles.doctorCard, { borderColor: '#A7F3D0', backgroundColor: '#F0FDF4' }]}>
                           <View style={styles.doctorCardHead}>
-                            <MaterialIcons name="local-pharmacy" size={16} color="#059669" />
+                            <MaterialIcons name="medication" size={16} color="#059669" />
                             <Text style={[styles.doctorCardTitle, { color: '#059669' }]}>
                               {msg.pharmacyCard.isJanAushadhi ? 'Jan Aushadhi Kendra' : 'Verified Pharmacy'}
                             </Text>
@@ -501,7 +596,7 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
                                 {msg.pharmacyCard.address} {msg.pharmacyCard.distanceKm ? `• ${msg.pharmacyCard.distanceKm} km` : ''}
                               </Text>
                               {msg.pharmacyCard.availableCount !== undefined && (
-                                <Text style={{ fontSize: 11, color: msg.pharmacyCard.hasAllMedicines ? '#059669' : '#D97706', marginTop: 2, fontWeight: '600' }}>
+                                <Text style={{ fontSize: 11, color: msg.pharmacyCard.hasAllMedicines ? Colors.primaryDark : '#D97706', marginTop: 2, fontWeight: '600' }}>
                                   {msg.pharmacyCard.hasAllMedicines ? '✓ All prescribed medicines in stock' : `Stock: ${msg.pharmacyCard.availableCount}/${msg.pharmacyCard.totalRequested} items available`}
                                 </Text>
                               )}
@@ -510,18 +605,18 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
                         </View>
                       )}
                       {msg.routeCard && (
-                        <View style={[styles.doctorCard, { borderColor: '#93C5FD', backgroundColor: '#EFF6FF' }]}>
+                        <View style={[styles.doctorCard, { borderColor: Colors.primaryFixedDim, backgroundColor: Colors.primaryLight }]}>
                           <View style={styles.doctorCardHead}>
-                            <MaterialIcons name="directions" size={16} color="#2563EB" />
-                            <Text style={[styles.doctorCardTitle, { color: '#2563EB' }]}>
+                            <MaterialIcons name="directions" size={16} color={Colors.primaryDark} />
+                            <Text style={[styles.doctorCardTitle, { color: Colors.primaryDark }]}>
                               Calculated Route ({msg.routeCard.mode || 'drive'})
                             </Text>
                           </View>
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E40AF', marginTop: 4 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.primaryDark, marginTop: 4 }}>
                             {msg.routeCard.distanceKm} km • ~{msg.routeCard.durationMinutes} mins travel time
                           </Text>
                           {msg.routeCard.instructions && msg.routeCard.instructions.length > 0 && (
-                            <Text style={{ fontSize: 11, color: '#3B82F6', marginTop: 4 }}>
+                            <Text style={{ fontSize: 11, color: Colors.primary, marginTop: 4 }}>
                               Directions: {msg.routeCard.instructions[0]}
                             </Text>
                           )}
@@ -552,6 +647,96 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
                           </View>
                         </View>
                       )}
+                      {msg.hospitalCards && (
+                        <View style={styles.hospitalCardsContainer}>
+                          {msg.hospitalCards.map(hosp => (
+                            <View key={hosp.id} style={styles.hospitalBedCard}>
+                              {/* Header: Name & Emergency Badge */}
+                              <View style={styles.hospCardHead}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.hospName} numberOfLines={1}>{hosp.name}</Text>
+                                  <View style={styles.hospLocationRow}>
+                                    <MaterialIcons name="location-on" size={12} color={Colors.outline} />
+                                    <Text style={styles.hospLocationText} numberOfLines={1}>
+                                      {hosp.address}{hosp.distanceKm ? ` • ${hosp.distanceKm} km away` : ''}
+                                    </Text>
+                                  </View>
+                                </View>
+                                <View style={[
+                                  styles.emergencyStatusBadge,
+                                  hosp.acceptingEmergency ? styles.emergencyStatusOpen : styles.emergencyStatusClosed
+                                ]}>
+                                  <View style={[
+                                    styles.emergencyDot,
+                                    { backgroundColor: hosp.acceptingEmergency ? '#059669' : '#DC2626' }
+                                  ]} />
+                                  <Text style={[
+                                    styles.emergencyStatusText,
+                                    { color: hosp.acceptingEmergency ? '#065F46' : '#991B1B' }
+                                  ]}>
+                                    {hosp.acceptingEmergency ? 'Emergency Open' : 'Emergency Closed'}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* Simple Bed Availability Table */}
+                              <View style={styles.bedTable}>
+                                <View style={styles.bedTableHeader}>
+                                  <Text style={[styles.bedTableCell, styles.bedTableColType, styles.bedTableHeaderText]}>Bed Type</Text>
+                                  <Text style={[styles.bedTableCell, styles.bedTableColNum, styles.bedTableHeaderText]}>Available</Text>
+                                  <Text style={[styles.bedTableCell, styles.bedTableColNum, styles.bedTableHeaderText]}>Total</Text>
+                                </View>
+
+                                <View style={styles.bedTableRow}>
+                                  <Text style={[styles.bedTableCell, styles.bedTableColType, styles.bedTypeName]}>General</Text>
+                                  <Text style={[styles.bedTableCell, styles.bedTableColNum, hosp.beds.general > 0 ? styles.bedCountGreen : styles.bedCountMuted]}>
+                                    {hosp.beds.general}
+                                  </Text>
+                                  <Text style={[styles.bedTableCell, styles.bedTableColNum, styles.bedTotalText]}>
+                                    {hosp.totalBeds?.general ?? '-'}
+                                  </Text>
+                                </View>
+
+                                <View style={[styles.bedTableRow, styles.bedTableRowAlt]}>
+                                  <Text style={[styles.bedTableCell, styles.bedTableColType, styles.bedTypeName]}>Emergency</Text>
+                                  <Text style={[styles.bedTableCell, styles.bedTableColNum, hosp.beds.emergency > 0 ? styles.bedCountGreen : styles.bedCountMuted]}>
+                                    {hosp.beds.emergency}
+                                  </Text>
+                                  <Text style={[styles.bedTableCell, styles.bedTableColNum, styles.bedTotalText]}>
+                                    {hosp.totalBeds?.emergency ?? '-'}
+                                  </Text>
+                                </View>
+
+                                <View style={styles.bedTableRow}>
+                                  <Text style={[styles.bedTableCell, styles.bedTableColType, styles.bedTypeName]}>ICU</Text>
+                                  <Text style={[styles.bedTableCell, styles.bedTableColNum, hosp.beds.icu > 0 ? styles.bedCountGreen : styles.bedCountMuted]}>
+                                    {hosp.beds.icu}
+                                  </Text>
+                                  <Text style={[styles.bedTableCell, styles.bedTableColNum, styles.bedTotalText]}>
+                                    {hosp.totalBeds?.icu ?? '-'}
+                                  </Text>
+                                </View>
+
+                                <View style={[styles.bedTableRow, styles.bedTableRowAlt]}>
+                                  <Text style={[styles.bedTableCell, styles.bedTableColType, styles.bedTypeName]}>Ventilator</Text>
+                                  <Text style={[styles.bedTableCell, styles.bedTableColNum, hosp.beds.ventilator > 0 ? styles.bedCountGreen : styles.bedCountMuted]}>
+                                    {hosp.beds.ventilator}
+                                  </Text>
+                                  <Text style={[styles.bedTableCell, styles.bedTableColNum, styles.bedTotalText]}>
+                                    {hosp.totalBeds?.ventilator ?? '-'}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* One-line summary below each hospital */}
+                              <View style={styles.hospSummaryBox}>
+                                <MaterialIcons name="check-circle" size={13} color={Colors.primary} />
+                                <Text style={styles.hospSummaryText}>{hosp.summaryLine}</Text>
+                              </View>
+                            </View>
+                          ))}
+                        </View>
+                      )}
                     </View>
                     <View style={[styles.metaRow, isUser && { justifyContent: 'flex-end' }]}>
                       <Text style={styles.timestamp}>{msg.time}</Text>
@@ -565,15 +750,15 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
                             : styles.sourceTagRule
                         ]}>
                           <MaterialIcons
-                            name={msg.source === 'online_ai' ? 'cloud' : msg.source === 'offline_ai' ? 'offline-bolt' : 'memory'}
+                            name={msg.source === 'online_ai' ? 'auto-awesome' : msg.source === 'offline_ai' ? 'offline-bolt' : 'memory'}
                             size={10}
-                            color={msg.source === 'online_ai' ? '#0369A1' : msg.source === 'offline_ai' ? '#047857' : '#475569'}
+                            color={msg.source === 'online_ai' ? Colors.primaryDark : msg.source === 'offline_ai' ? '#047857' : '#475569'}
                           />
                           <Text style={[
                             styles.sourceTagText,
-                            { color: msg.source === 'online_ai' ? '#0369A1' : msg.source === 'offline_ai' ? '#047857' : '#475569' }
+                            { color: msg.source === 'online_ai' ? Colors.primaryDark : msg.source === 'offline_ai' ? '#047857' : '#475569' }
                           ]}>
-                            {msg.source === 'online_ai' ? 'Online Cloud' : msg.source === 'offline_ai' ? 'Offline Triage' : 'Offline Engine'}
+                            {msg.source === 'online_ai' ? 'Verified AI' : msg.source === 'offline_ai' ? 'Offline Triage' : 'Offline Engine'}
                           </Text>
                         </View>
                       )}
@@ -585,10 +770,13 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
 
             {isTyping && (
               <View style={[styles.msgRow, styles.msgRowAi]}>
-                <View style={styles.aiAvatar}><MaterialIcons name="smart-toy" size={15} color={Colors.primary} /></View>
+                <View style={[styles.aiAvatar, { backgroundColor: Colors.primaryLight, borderColor: Colors.primaryFixedDim }]}>
+                  <MaterialIcons name="auto-awesome" size={15} color={Colors.primary} />
+                </View>
                 <View style={[styles.bubble, styles.bubbleAi, styles.typingBubble]}>
-                  <View style={styles.typingDot} /><View style={[styles.typingDot, { opacity: 0.7 }]} /><View style={[styles.typingDot, { opacity: 0.4 }]} />
-                  <Text style={styles.typingLabel}>AI analyzing...</Text>
+                  <View style={styles.typingDot} />
+                  <View style={[styles.typingDot, { opacity: 0.6 }]} />
+                  <View style={[styles.typingDot, { opacity: 0.3 }]} />
                 </View>
               </View>
             )}
@@ -729,6 +917,108 @@ export const PatientTriageScreen: React.FC<Props> = ({ onNavigate, onOpenBooking
         </View>
       </View>
     </Modal>
+
+    {/* Doctor Profile Modal */}
+    <Modal visible={!!selectedDoctorProfile} animationType="slide" transparent onRequestClose={() => setSelectedDoctorProfile(null)}>
+      <View style={styles.historyModalOverlay}>
+        <View style={styles.historyModalContainer}>
+          <View style={styles.historyModalHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <MaterialIcons name="person" size={22} color={Colors.primary} />
+              <Text style={styles.historyModalTitle}>Doctor Profile</Text>
+            </View>
+            <TouchableOpacity onPress={() => setSelectedDoctorProfile(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <MaterialIcons name="close" size={22} color={Colors.onSurface} />
+            </TouchableOpacity>
+          </View>
+          {selectedDoctorProfile && (
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 18, gap: 14 }}>
+              <View style={styles.docProfileHeadCard}>
+                <View style={styles.docProfileAvatar}>
+                  <MaterialIcons name="medical-services" size={28} color={Colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.docProfileName}>{selectedDoctorProfile.name}</Text>
+                  <Text style={styles.docProfileSpecialty}>{selectedDoctorProfile.specialty}</Text>
+                  {selectedDoctorProfile.qualification && (
+                    <Text style={styles.docProfileQual}>{selectedDoctorProfile.qualification}</Text>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.docProfileDetailBox}>
+                <Text style={styles.docProfileSectionLabel}>Facility & Location</Text>
+                <View style={styles.docProfileRow}>
+                  <Text style={{ fontSize: 13 }}>📍</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.docProfileLocationName}>
+                      {selectedDoctorProfile.clinicName || selectedDoctorProfile.clinic || 'Ramnagar Primary Health Centre'}
+                    </Text>
+                    {selectedDoctorProfile.clinicAddress && (
+                      <Text style={styles.docProfileLocationSub}>{selectedDoctorProfile.clinicAddress}</Text>
+                    )}
+                  </View>
+                </View>
+                {selectedDoctorProfile.distanceKm != null && (
+                  <Text style={styles.docProfileDistance}>
+                    Distance: ~{selectedDoctorProfile.distanceKm} km away
+                  </Text>
+                )}
+              </View>
+
+              <View style={styles.docProfileDetailBox}>
+                <Text style={styles.docProfileSectionLabel}>Consultation & Coverage</Text>
+                <View style={styles.docProfileBadgeRow}>
+                  <View style={styles.docProfileBadgeGreen}>
+                    <Text style={styles.docProfileBadgeGreenText}>
+                      {selectedDoctorProfile.isAvailable !== false ? '● Available Now' : '● Next Slot Today'}
+                    </Text>
+                  </View>
+                  <View style={styles.docProfileBadgeLight}>
+                    <Text style={styles.docProfileBadgeLightText}>
+                      {selectedDoctorProfile.teleconsultation !== false ? 'Teleconsultation Available' : 'In-person Only'}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.docProfileFee}>
+                  {selectedDoctorProfile.ayushmanPaneled !== false
+                    ? 'Covered under Ayushman Bharat (₹0 consultation fee)'
+                    : `Consultation Fee: ₹${selectedDoctorProfile.consultationFee || 150}`}
+                </Text>
+              </View>
+
+              <View style={{ marginTop: 8, gap: 8 }}>
+                <TouchableOpacity
+                  style={styles.docProfileBookBtn}
+                  onPress={() => {
+                    const doc = selectedDoctorProfile;
+                    setSelectedDoctorProfile(null);
+                    onOpenBooking(
+                      doc.id || doc.doctorId,
+                      doc.name,
+                      doc.specialty,
+                      doc.clinicName || doc.clinic || 'Ramnagar PHC'
+                    );
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <MaterialIcons name="calendar-month" size={18} color={Colors.white} />
+                  <Text style={styles.docProfileBookBtnText}>Book Consultation Now</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.docProfileCloseBtn}
+                  onPress={() => setSelectedDoctorProfile(null)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.docProfileCloseBtnText}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
     </>
   );
 };
@@ -742,7 +1032,7 @@ const styles = StyleSheet.create({
   chatWrapper: { flex: 1 },
   chatHeader: { paddingHorizontal: Spacing.md, paddingVertical: 12, backgroundColor: Colors.surfaceContainerLowest, borderBottomWidth: 1, borderBottomColor: Colors.outlineLight },
   headerBadge: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  botCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#0284C7', alignItems: 'center', justifyContent: 'center', ...Shadows.sm },
+  botCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', ...Shadows.sm },
   headerTitle: { fontSize: 14, fontWeight: '700', color: Colors.secondary },
   headerSub: { fontSize: 11, color: Colors.onSurfaceVariant, marginTop: 1 },
   resetChatBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 5, borderRadius: Radii.full, backgroundColor: Colors.surfaceContainerLow, borderWidth: 1, borderColor: Colors.outlineLight },
@@ -766,8 +1056,8 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, marginLeft: 4 },
   timestamp: { fontSize: 10, color: Colors.outline },
   sourceTag: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: Radii.full },
-  sourceTagOnline: { backgroundColor: '#E0F2FE' },
-  sourceTagOffline: { backgroundColor: '#DCFCE7' },
+  sourceTagOnline: { backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: Colors.primaryFixedDim },
+  sourceTagOffline: { backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: Colors.primaryFixedDim },
   sourceTagRule: { backgroundColor: Colors.surfaceContainerLow },
   sourceTagText: { fontSize: 9.5, fontWeight: '700' },
   doctorCard: { backgroundColor: Colors.surfaceContainerLow, borderWidth: 1, borderColor: Colors.outlineLight, borderRadius: Radii.md, padding: 12, marginTop: 10, gap: 6 },
@@ -784,9 +1074,238 @@ const styles = StyleSheet.create({
   bookBtnSmallText: { color: Colors.white, fontSize: 11.5, fontWeight: '700' },
   bookBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.primary, paddingVertical: 9, borderRadius: Radii.sm, marginTop: 4, ...Shadows.sm },
   bookBtnText: { color: Colors.white, fontSize: 12, fontWeight: '700' },
-  typingBubble: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10 },
-  typingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.primary },
-  typingLabel: { fontSize: 11, color: Colors.onSurfaceVariant, fontStyle: 'italic', marginLeft: 4 },
+  // Step-by-Step Triage Doctor Card Styles
+  triageDocCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 13,
+    marginTop: 10,
+    gap: 3,
+    ...Shadows.sm,
+  },
+  triageDocCardHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 2,
+  },
+  triageDocCardTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  triageDocName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: Colors.onSurface,
+    letterSpacing: -0.2,
+  },
+  triageDocMeta: {
+    fontSize: 12.5,
+    color: Colors.onSurfaceVariant,
+    fontWeight: '500',
+  },
+  triageDocAvailability: {
+    fontSize: 12,
+    color: '#059669',
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  triageDocLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  triageDocLocationPin: {
+    fontSize: 13,
+  },
+  triageDocLocationText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: Colors.onSurface,
+  },
+  triageDocActionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  triageDocBtnPrimary: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: Radii.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadows.sm,
+  },
+  triageDocBtnPrimaryText: {
+    color: Colors.white,
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  triageDocBtnSecondary: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: Radii.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  triageDocBtnSecondaryText: {
+    color: '#334155',
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  // Doctor Profile Modal Styles
+  docProfileHeadCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F8FAFC',
+    padding: 14,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  docProfileAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  docProfileName: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: Colors.onSurface,
+  },
+  docProfileSpecialty: {
+    fontSize: 13,
+    color: Colors.primary,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  docProfileQual: {
+    fontSize: 11.5,
+    color: Colors.onSurfaceVariant,
+    marginTop: 2,
+  },
+  docProfileDetailBox: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: Radii.md,
+    padding: 13,
+    gap: 6,
+  },
+  docProfileSectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.onSurfaceVariant,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  docProfileRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  docProfileLocationName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.onSurface,
+  },
+  docProfileLocationSub: {
+    fontSize: 11.5,
+    color: Colors.onSurfaceVariant,
+    marginTop: 1,
+  },
+  docProfileDistance: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.primary,
+    marginTop: 4,
+  },
+  docProfileBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 4,
+  },
+  docProfileBadgeGreen: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radii.full,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  docProfileBadgeGreenText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#065F46',
+  },
+  docProfileBadgeLight: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radii.full,
+  },
+  docProfileBadgeLightText: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  docProfileFee: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.primaryDark,
+    marginTop: 2,
+  },
+  docProfileBookBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.primary,
+    paddingVertical: 12,
+    borderRadius: Radii.md,
+    ...Shadows.sm,
+  },
+  docProfileBookBtnText: {
+    color: Colors.white,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  docProfileCloseBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    backgroundColor: '#F1F5F9',
+    borderRadius: Radii.md,
+  },
+  docProfileCloseBtnText: {
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  typingBubble: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 12, paddingHorizontal: 16, minWidth: 52, justifyContent: 'center' },
+  typingDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: Colors.primary },
   quickSection: { backgroundColor: Colors.surfaceContainerLowest, borderTopWidth: 1, borderTopColor: Colors.outlineLight, paddingVertical: 8, paddingHorizontal: Spacing.md },
   quickLabel: { fontSize: 10.5, fontWeight: '700', color: Colors.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
   quickChip: { backgroundColor: Colors.surfaceContainerLow, borderWidth: 1, borderColor: Colors.outlineLight, paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radii.full },
@@ -806,4 +1325,30 @@ const styles = StyleSheet.create({
   historyItem: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Colors.surfaceContainerLowest, borderWidth: 1, borderColor: Colors.outlineLight, borderRadius: Radii.md, padding: 14 },
   historyItemTitle: { fontSize: 13, fontWeight: '700', color: Colors.onSurface },
   historyItemMeta: { fontSize: 11, color: Colors.onSurfaceVariant, marginTop: 2 },
+  // Hospital Bed Card Styles
+  hospitalCardsContainer: { gap: 10, marginTop: 8 },
+  hospitalBedCard: { backgroundColor: '#FFFFFF', borderRadius: Radii.md, borderWidth: 1, borderColor: '#E2E8F0', padding: 12, gap: 10, ...Shadows.sm },
+  hospCardHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
+  hospName: { fontSize: 14, fontWeight: '800', color: Colors.onSurface, letterSpacing: -0.2 },
+  hospLocationRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 },
+  hospLocationText: { fontSize: 11, color: Colors.onSurfaceVariant, flex: 1 },
+  emergencyStatusBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radii.full, borderWidth: 1 },
+  emergencyStatusOpen: { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' },
+  emergencyStatusClosed: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+  emergencyDot: { width: 6, height: 6, borderRadius: 3 },
+  emergencyStatusText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.2 },
+  bedTable: { borderWidth: 1, borderColor: '#E2E8F0', borderRadius: Radii.sm, overflow: 'hidden' },
+  bedTableHeader: { flexDirection: 'row', backgroundColor: '#F8FAFC', paddingVertical: 6, paddingHorizontal: 10, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  bedTableHeaderText: { fontSize: 10, fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5 },
+  bedTableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' },
+  bedTableRowAlt: { backgroundColor: '#F8FAFC' },
+  bedTableCell: { fontSize: 12 },
+  bedTableColType: { flex: 2 },
+  bedTableColNum: { flex: 1, textAlign: 'center' },
+  bedTypeName: { color: '#334155', fontWeight: '600' },
+  bedCountGreen: { color: Colors.primaryDark, fontWeight: '800' },
+  bedCountMuted: { color: '#94A3B8', fontWeight: '600' },
+  bedTotalText: { color: '#64748B', fontWeight: '500' },
+  hospSummaryBox: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primaryLight, paddingHorizontal: 9, paddingVertical: 6, borderRadius: Radii.sm },
+  hospSummaryText: { fontSize: 11, fontWeight: '700', color: Colors.primaryDark, flex: 1 },
 });

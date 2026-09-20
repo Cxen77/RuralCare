@@ -25,6 +25,12 @@ interface Props {
   onOpenQr: (medName: string, rxCode: string) => void;
 }
 
+const formatDoctorName = (name?: string) => {
+  if (!name) return 'Doctor';
+  const clean = name.trim();
+  return clean.startsWith('Dr.') ? clean : `Dr. ${clean}`;
+};
+
 export const PatientMedsScreen: React.FC<Props> = ({ onOpenQr }) => {
   const {
     prescriptions,
@@ -32,6 +38,7 @@ export const PatientMedsScreen: React.FC<Props> = ({ onOpenQr }) => {
     getPharmacyMatches,
     getPharmacyMatchesAsync,
     reserveMedicines,
+    deletePrescription,
     pharmacies,
     refresh,
   } = useCarePlatform();
@@ -42,10 +49,14 @@ export const PatientMedsScreen: React.FC<Props> = ({ onOpenQr }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedRxForModal, setSelectedRxForModal] = useState<Prescription | null>(null);
 
-  // Auto-expand the most recent prescription by default
+  // Auto-expand only the most recent prescription by default
   useEffect(() => {
-    if (prescriptions.length > 0 && !expandedRxId) {
-      setExpandedRxId(prescriptions[0].id);
+    if (prescriptions.length > 0) {
+      if (!expandedRxId || !prescriptions.some(p => p.id === expandedRxId)) {
+        setExpandedRxId(prescriptions[0].id);
+      }
+    } else {
+      setExpandedRxId(null);
     }
   }, [prescriptions]);
 
@@ -58,6 +69,35 @@ export const PatientMedsScreen: React.FC<Props> = ({ onOpenQr }) => {
     } finally {
       setRefreshing(false);
     }
+  };
+
+  const handleDeletePrescription = (rxId: string, diagName?: string) => {
+    const doDelete = async () => {
+      try {
+        await deletePrescription(rxId);
+        if (expandedRxId === rxId) {
+          setExpandedRxId(null);
+        }
+      } catch (e: any) {
+        Alert.alert('Error', e?.message || 'Could not delete prescription');
+      }
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.confirm) {
+      if (window.confirm(`Delete prescription for "${diagName || 'Prescription Order'}"?`)) {
+        doDelete();
+      }
+      return;
+    }
+
+    Alert.alert(
+      'Delete Prescription',
+      `Are you sure you want to delete the prescription for "${diagName || 'Prescription Order'}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: doDelete },
+      ]
+    );
   };
 
   const handleFindPharmacy = async (rxId: string) => {
@@ -98,9 +138,9 @@ export const PatientMedsScreen: React.FC<Props> = ({ onOpenQr }) => {
   const getFulfillmentStep = (status: string): { step: number; label: string; color: string; desc: string } => {
     switch (status) {
       case 'dispensed':
-        return { step: 5, label: 'Picked Up / Dispensed', color: '#16A34A', desc: 'Prescription fully dispensed. Thank you!' };
+        return { step: 5, label: 'Picked Up / Dispensed', color: Colors.primaryDark, desc: 'Prescription fully dispensed. Thank you!' };
       case 'ready_for_pickup':
-        return { step: 4, label: 'Ready for Pickup', color: '#059669', desc: 'Medicines packed and ready at pharmacy counter!' };
+        return { step: 4, label: 'Ready for Pickup', color: Colors.primary, desc: 'Medicines packed and ready at pharmacy counter!' };
       case 'preparing':
         return { step: 3, label: 'Preparing Medicines', color: '#0284C7', desc: 'Pharmacist is assembling and packing your items.' };
       case 'confirmed':
@@ -164,152 +204,178 @@ export const PatientMedsScreen: React.FC<Props> = ({ onOpenQr }) => {
                 <MaterialIcons
                   name={
                     stage.step >= 4 ? 'verified' :
-                    stage.step >= 2 ? 'local-pharmacy' :
+                    stage.step >= 2 ? 'medication' :
                     stage.step === 1 ? 'outgoing-mail' : 'description'
                   }
                   size={22}
                   color={stage.color}
                 />
               </View>
-              <View style={{ flex: 1 }}>
-                <View style={styles.titleRow}>
-                  <Text style={styles.rxTitle}>{rx.diagnosis || 'Prescription Order'}</Text>
+
+              <View style={styles.rxHeaderInfo}>
+                <Text style={styles.rxTitle} numberOfLines={1}>
+                  {rx.diagnosis || 'Prescription Order'}
+                </Text>
+
+                <View style={styles.badgeAndDateRow}>
                   <View style={[styles.statusBadge, { backgroundColor: stage.color + '18' }]}>
                     <Text style={[styles.statusBadgeText, { color: stage.color }]}>{stage.label}</Text>
                   </View>
+                  <Text style={styles.rxDate}>
+                    Issued {new Date(rx.issuedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </Text>
                 </View>
-                <Text style={styles.rxSub}>Dr. {rx.doctorName} • {rx.items.length} medication{rx.items.length !== 1 ? 's' : ''}</Text>
-                <Text style={styles.rxDate}>Issued {new Date(rx.issuedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
+
+                <Text style={styles.rxSub} numberOfLines={1}>
+                  {formatDoctorName(rx.doctorName)} • {rx.items.length} medication{rx.items.length !== 1 ? 's' : ''}
+                </Text>
               </View>
-              <MaterialIcons name={isExpanded ? 'expand-less' : 'expand-more'} size={24} color={Colors.outline} />
+
+              <View style={styles.headerRightColumn}>
+                <TouchableOpacity
+                  style={styles.deleteRxBtn}
+                  onPress={(e: any) => {
+                    e?.stopPropagation?.();
+                    handleDeletePrescription(rx.id, rx.diagnosis);
+                  }}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityLabel="Delete prescription"
+                >
+                  <MaterialIcons name="delete-outline" size={17} color={Colors.error} />
+                </TouchableOpacity>
+                <MaterialIcons name={isExpanded ? 'expand-less' : 'expand-more'} size={22} color={Colors.outline} />
+              </View>
             </TouchableOpacity>
 
-            {/* FULFILLMENT TRACKER (Always visible or in card) */}
-            <View style={styles.trackerContainer}>
-              <View style={styles.trackerSteps}>
-                {[
-                  { label: 'Doctor Issued', step: 0 },
-                  { label: 'Sent to Stores', step: 1 },
-                  { label: 'Stock Confirmed', step: 2 },
-                  { label: 'Preparing', step: 3 },
-                  { label: 'Ready for Pickup', step: 4 },
-                ].map((s, idx) => {
-                  const isComplete = stage.step > s.step || (s.step === 4 && stage.step === 5);
-                  const isCurrent = stage.step === s.step;
-                  return (
-                    <View key={s.step} style={styles.stepItem}>
-                      <View style={styles.stepConnectorRow}>
-                        {idx > 0 && (
-                          <View
+            {/* EXPANDABLE BODY: ONLY VISIBLE WHEN isExpanded IS TRUE */}
+            {isExpanded && (
+              <>
+                {/* FULFILLMENT TRACKER */}
+                <View style={styles.trackerContainer}>
+                  <View style={styles.trackerSteps}>
+                    {[
+                      { label: 'Issued', step: 0 },
+                      { label: 'Broadcast', step: 1 },
+                      { label: 'Confirmed', step: 2 },
+                      { label: 'Preparing', step: 3 },
+                      { label: 'Ready', step: 4 },
+                    ].map((s, idx) => {
+                      const isComplete = stage.step > s.step || (s.step === 4 && stage.step === 5);
+                      const isCurrent = stage.step === s.step;
+                      return (
+                        <View key={s.step} style={styles.stepItem}>
+                          <View style={styles.stepConnectorRow}>
+                            {idx > 0 && (
+                              <View
+                                style={[
+                                  styles.connectorLine,
+                                  { backgroundColor: stage.step >= s.step ? Colors.primary : '#E2E8F0' },
+                                ]}
+                              />
+                            )}
+                            <View
+                              style={[
+                                styles.stepCircle,
+                                isComplete
+                                  ? styles.stepCircleDone
+                                  : isCurrent
+                                  ? styles.stepCircleCurrent
+                                  : styles.stepCircleUpcoming,
+                              ]}
+                            >
+                              <MaterialIcons
+                                name={isComplete ? 'check' : isCurrent ? 'radio-button-checked' : 'radio-button-unchecked'}
+                                size={12}
+                                color={isComplete || isCurrent ? '#FFFFFF' : '#94A3B8'}
+                              />
+                            </View>
+                            {idx < 4 && (
+                              <View
+                                style={[
+                                  styles.connectorLine,
+                                  { backgroundColor: stage.step > s.step ? Colors.primary : '#E2E8F0' },
+                                ]}
+                              />
+                            )}
+                          </View>
+                          <Text
                             style={[
-                              styles.connectorLine,
-                              { backgroundColor: stage.step >= s.step ? Colors.primary : '#E2E8F0' },
+                              styles.stepLabel,
+                              isCurrent && styles.stepLabelCurrent,
+                              isComplete && styles.stepLabelDone,
                             ]}
-                          />
-                        )}
-                        <View
-                          style={[
-                            styles.stepCircle,
-                            isComplete
-                              ? styles.stepCircleDone
-                              : isCurrent
-                              ? styles.stepCircleCurrent
-                              : styles.stepCircleUpcoming,
-                          ]}
-                        >
-                          <MaterialIcons
-                            name={isComplete ? 'check' : isCurrent ? 'radio-button-checked' : 'radio-button-unchecked'}
-                            size={12}
-                            color={isComplete || isCurrent ? '#FFFFFF' : '#94A3B8'}
-                          />
+                            numberOfLines={1}
+                          >
+                            {s.label}
+                          </Text>
                         </View>
-                        {idx < 4 && (
-                          <View
-                            style={[
-                              styles.connectorLine,
-                              { backgroundColor: stage.step > s.step ? Colors.primary : '#E2E8F0' },
-                            ]}
-                          />
-                        )}
-                      </View>
-                      <Text
-                        style={[
-                          styles.stepLabel,
-                          isCurrent && styles.stepLabelCurrent,
-                          isComplete && styles.stepLabelDone,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {s.label}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-              <Text style={styles.trackerDesc}>{stage.desc}</Text>
-            </View>
-
-            {/* PICKUP BANNER IF READY OR CONFIRMED */}
-            {(stage.step >= 2 || token) && (
-              <View style={[styles.pickupBanner, isReadyOrDone && styles.pickupBannerReady]}>
-                <View style={styles.pickupBannerHeader}>
-                  <MaterialIcons
-                    name={isReadyOrDone ? 'check-circle' : 'inventory-2'}
-                    size={22}
-                    color={isReadyOrDone ? '#047857' : '#1D4ED8'}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.pickupBannerTitle, isReadyOrDone && { color: '#065F46' }]}>
-                      {isReadyOrDone ? 'MEDICINE READY FOR PICKUP' : 'CONFIRMED PHARMACY RESERVATION'}
-                    </Text>
-                    <Text style={styles.pickupBannerSubtitle}>
-                      {isReadyOrDone
-                        ? 'Present this pickup token at the pharmacy counter to collect medicines.'
-                        : 'Pharmacy confirmed inventory. Pickup token generated below.'}
-                    </Text>
+                      );
+                    })}
                   </View>
+                  <Text style={styles.trackerDesc}>{stage.desc}</Text>
                 </View>
 
-                {token && (
-                  <View style={styles.tokenCard}>
-                    <View>
-                      <Text style={styles.tokenCardLabel}>VERIFICATION PICKUP TOKEN</Text>
-                      <Text style={styles.tokenCardValue}>{token}</Text>
+                {/* PICKUP BANNER IF READY OR CONFIRMED */}
+                {(stage.step >= 2 || token) && (
+                  <View style={[styles.pickupBanner, isReadyOrDone && styles.pickupBannerReady]}>
+                    <View style={styles.pickupBannerHeader}>
+                      <MaterialIcons
+                        name={isReadyOrDone ? 'check-circle' : 'inventory-2'}
+                        size={22}
+                        color={isReadyOrDone ? Colors.primaryDark : '#1D4ED8'}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.pickupBannerTitle, isReadyOrDone && { color: Colors.primaryDark }]}>
+                          {isReadyOrDone ? 'MEDICINE READY FOR PICKUP' : 'CONFIRMED PHARMACY RESERVATION'}
+                        </Text>
+                        <Text style={styles.pickupBannerSubtitle}>
+                          {isReadyOrDone
+                            ? 'Present this pickup token at the pharmacy counter to collect medicines.'
+                            : 'Pharmacy confirmed inventory. Pickup token generated below.'}
+                        </Text>
+                      </View>
                     </View>
-                    <TouchableOpacity
-                      style={styles.qrBadgeBtn}
-                      onPress={() => onOpenQr(rx.items[0]?.drugName || 'Prescription', token)}
-                      activeOpacity={0.8}
-                    >
-                      <MaterialIcons name="qr-code" size={18} color={Colors.primary} />
-                      <Text style={styles.qrBadgeBtnText}>Show QR</Text>
-                    </TouchableOpacity>
+
+                    {token && (
+                      <View style={styles.tokenCard}>
+                        <View>
+                          <Text style={styles.tokenCardLabel}>VERIFICATION PICKUP TOKEN</Text>
+                          <Text style={styles.tokenCardValue}>{token}</Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.qrBadgeBtn}
+                          onPress={() => onOpenQr(rx.items[0]?.drugName || 'Prescription', token)}
+                          activeOpacity={0.8}
+                        >
+                          <MaterialIcons name="qr-code" size={18} color={Colors.primary} />
+                          <Text style={styles.qrBadgeBtnText}>Show QR</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
+                    {/* Assigned Pharmacy Details */}
+                    <View style={styles.pharmacyDetailsBox}>
+                      <View style={styles.pharmaDetailRow}>
+                        <MaterialIcons name="storefront" size={16} color={Colors.onSurfaceVariant} />
+                        <Text style={styles.pharmaDetailName}>{pharmacyName}</Text>
+                      </View>
+                      <View style={styles.pharmaDetailRow}>
+                        <MaterialIcons name="place" size={16} color={Colors.outline} />
+                        <Text style={styles.pharmaDetailSub}>{pharmacyAddress}</Text>
+                      </View>
+                      {pharmacyPhone && (
+                        <View style={styles.pharmaDetailRow}>
+                          <MaterialIcons name="phone" size={16} color={Colors.outline} />
+                          <Text style={styles.pharmaDetailSub}>{pharmacyPhone}</Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
                 )}
 
-                {/* Assigned Pharmacy Details */}
-                <View style={styles.pharmacyDetailsBox}>
-                  <View style={styles.pharmaDetailRow}>
-                    <MaterialIcons name="storefront" size={16} color={Colors.onSurfaceVariant} />
-                    <Text style={styles.pharmaDetailName}>{pharmacyName}</Text>
-                  </View>
-                  <View style={styles.pharmaDetailRow}>
-                    <MaterialIcons name="place" size={16} color={Colors.outline} />
-                    <Text style={styles.pharmaDetailSub}>{pharmacyAddress}</Text>
-                  </View>
-                  {pharmacyPhone && (
-                    <View style={styles.pharmaDetailRow}>
-                      <MaterialIcons name="phone" size={16} color={Colors.outline} />
-                      <Text style={styles.pharmaDetailSub}>{pharmacyPhone}</Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            )}
-
-            {/* Expanded Body */}
-            {isExpanded && (
-              <View style={styles.rxBody}>
+                {/* Expanded Body */}
+                <View style={styles.rxBody}>
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>Prescribed Medications ({rx.items.length})</Text>
                   <TouchableOpacity
@@ -361,7 +427,7 @@ export const PatientMedsScreen: React.FC<Props> = ({ onOpenQr }) => {
                   <View style={{ marginTop: 8 }}>
                     <Button
                       label={matchingLoading ? 'Matching live inventories…' : 'Find Nearby Medical Stores'}
-                      icon="local-pharmacy"
+                      icon="medication"
                       block
                       variant="outline"
                       loading={matchingLoading}
@@ -416,6 +482,7 @@ export const PatientMedsScreen: React.FC<Props> = ({ onOpenQr }) => {
                   </View>
                 )}
               </View>
+              </>
             )}
           </Card>
         );
@@ -532,12 +599,22 @@ const styles = StyleSheet.create({
   rxCard: { overflow: 'hidden', borderWidth: 1, borderColor: '#E2E8F0' },
   rxHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, backgroundColor: '#FFFFFF' },
   rxStatusIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  rxTitle: { fontSize: 15, fontWeight: '700', color: Colors.onSurface, flex: 1 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radii.full },
-  statusBadgeText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
-  rxSub: { fontSize: 12, color: Colors.onSurfaceVariant, marginTop: 2 },
-  rxDate: { fontSize: 10, color: Colors.outline, marginTop: 2 },
+  rxHeaderInfo: { flex: 1, gap: 3 },
+  rxTitle: { fontSize: 15, fontWeight: '700', color: Colors.onSurface },
+  badgeAndDateRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 2 },
+  statusBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: Radii.full },
+  statusBadgeText: { fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
+  rxDate: { fontSize: 11, color: Colors.outline },
+  rxSub: { fontSize: 12, color: Colors.onSurfaceVariant, marginTop: 1 },
+  headerRightColumn: { alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingLeft: 4, minHeight: 46 },
+  deleteRxBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   // TRACKER
   trackerContainer: {
@@ -576,8 +653,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   pickupBannerReady: {
-    backgroundColor: '#ECFDF5',
-    borderBottomColor: '#A7F3D0',
+    backgroundColor: Colors.primaryLight,
+    borderBottomColor: '#C4EFF5',
   },
   pickupBannerHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   pickupBannerTitle: { fontSize: 12, fontWeight: '800', color: '#1E40AF', letterSpacing: 0.5 },

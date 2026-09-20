@@ -191,25 +191,26 @@ export class TriageStateMachine {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // CATEGORY HANDLERS
+  // CATEGORY HANDLERS (STEP-BY-STEP TRIAGE: 2-3 SHORT TARGETED QUESTIONS)
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
    * LIMB & TRAUMA INJURY FLOW:
-   * Turn 1: Mechanism (fall/hit/cut) + Exact Location
-   * Turn 2: Severity (1-10) + Swelling/Bleeding + Walking/Standing difficulty
-   * Turn 3: Complete -> Triage Summary + Doctor Card
+   * Turn 1: Mechanism (fall/hit/cut/twist)
+   * Turn 2: Swelling/bleeding + severity (1-10)
+   * Turn 3: Warning signs (ability to bear weight/walk, numbness)
+   * Turn 4+: Finalize assessment & Doctor recommendation
    */
   private static handleLimbInjury(state: TriageState, lang: 'en' | 'hi' | 'ne'): AIRouterResponse {
     state.recommendedSpecialty = 'Orthopedics';
 
-    // Step 1: Missing mechanism (e.g. user says "I hurt my leg")
-    if (!state.injuryMechanism) {
+    // Question 1 (Turn 1): Mechanism & location
+    if (!state.injuryMechanism && state.turnCount < 2) {
       state.stage = 'asking_followup_1';
       const question = lang === 'hi'
-        ? 'यह सुनकर दुख हुआ। क्या यह चोट गिरने, कटने, किसी चीज़ से टकराने या मुड़ने से लगी? और ठीक कहाँ दर्द हो रहा है?'
-        : 'Sorry to hear that. Did you hurt it from a fall, a cut, a hit, or something else? Where exactly does it hurt?';
-      
+        ? 'मैं आपके सही इलाज के लिए मदद करूँगा। क्या यह चोट गिरने, टकराने, कटने या मुड़ने से लगी?'
+        : 'I can help you find the right care. Did you hurt it from a fall, a cut, a hit, or a twist?';
+
       const chips = lang === 'hi'
         ? ['मैं गिर गया था', 'चोट लग गई/कट गया', 'टकराने से चोट लगी', 'पैर मुड़ गया']
         : ['I fell down', 'Hit by object', 'Cut / wound', 'Twisted my ankle'];
@@ -217,72 +218,142 @@ export class TriageStateMachine {
       return TriageStateMachine.buildFollowupResponse(question, chips, state);
     }
 
-    // Step 2: Missing severity OR functional check (swelling, bleeding, walking)
-    const hasFunctionalData = state.difficultyWalking !== null || state.swelling !== null || state.bleeding !== null;
-    const hasSeverityData = state.severity !== null;
-
-    if (!hasFunctionalData || !hasSeverityData || state.turnCount < 2) {
+    // Question 2 (Turn 2): Severity & swelling/bleeding
+    if (!state.severity && state.swelling === null && state.turnCount < 3) {
       state.stage = 'asking_followup_2';
-      const loc = state.bodyLocation || 'leg or arm';
       const question = lang === 'hi'
-        ? `आपके ${loc} में दर्द 1 से 10 के पैमाने पर कितना है? क्या वहाँ सूजन, खून बहना या चलने/खड़े होने में परेशानी हो रही है?`
-        : `Where on your ${loc} does it hurt, and how bad is the pain from 1 to 10? Is there swelling, bleeding, or difficulty standing or walking?`;
+        ? 'क्या चोट वाली जगह पर सूजन या खून बह रहा है, और दर्द 1 से 10 के पैमाने पर कितना है?'
+        : 'Is there any swelling or bleeding, and how bad is the pain from 1 to 10?';
 
       const chips = lang === 'hi'
-        ? ['घुटने में दर्द, 7/10', 'सूजन है और चल नहीं पा रहा', 'हल्का दर्द, चल सकता हूँ']
-        : ['My knee, about 7/10', 'Swelling and cannot walk', 'Mild pain, can walk fine'];
+        ? ['सूजन है, दर्द 7/10', 'हल्का दर्द, सूजन नहीं', 'खून बह रहा है']
+        : ['Swelling, pain 7/10', 'Mild pain, no swelling', 'Swollen and throbbing'];
 
       return TriageStateMachine.buildFollowupResponse(question, chips, state);
     }
 
-    // Step 3: All necessary info collected -> Finalize
+    // Question 3 (Turn 3): Warning signs / functional check (walking, numbness)
+    if (state.difficultyWalking === null && state.turnCount < 4) {
+      state.stage = 'asking_followup_2';
+      const question = lang === 'hi'
+        ? 'क्या आप पैर या हाथ पर वजन डाल पा रहे हैं या चल पा रहे हैं? क्या कोई सुन्नपन महसूस हो रहा है?'
+        : 'Are you able to walk or bear weight, and is there any numbness or loss of sensation?';
+
+      const chips = lang === 'hi'
+        ? ['चलने में बहुत परेशानी है', 'पैर पर वजन नहीं रख पा रहा', 'चल सकता हूँ, कोई सुन्नपन नहीं']
+        : ['Can walk with difficulty', 'Cannot walk or stand', 'No numbness, can walk'];
+
+      return TriageStateMachine.buildFollowupResponse(question, chips, state);
+    }
+
+    // Finalize triage after 2-3 questions answered
     return TriageStateMachine.finalizeTriage(state, lang);
   }
 
   /**
    * FEVER & RESPIRATORY FLOW:
-   * Turn 1: Duration + Fever level/severity + Breathing check + Cough/Sore throat
-   * Turn 2: Complete -> Home care (hydration/paracetamol) + General Physician Card
+   * Turn 1: Duration
+   * Turn 2: Associated symptoms (cough, sore throat, body pain, vomiting)
+   * Turn 3: Warning signs (difficulty breathing, chest pain, confusion, persistent high fever)
+   * Turn 4+: Finalize assessment & Doctor recommendation
    */
   private static handleFeverRespiratory(state: TriageState, lang: 'en' | 'hi' | 'ne'): AIRouterResponse {
     state.recommendedSpecialty = 'General Medicine';
 
-    // Step 1: Check if duration or breathing status is unknown
-    if (!state.duration && state.difficultyBreathing === null && state.turnCount < 2) {
+    // Question 1 (Turn 1): Duration
+    if (!state.duration && state.turnCount < 2) {
       state.stage = 'asking_followup_1';
       const question = lang === 'hi'
-        ? 'आपको बुखार और खांसी कितने दिनों से है? क्या बुखार हल्का है या तेज़, और क्या सांस लेने में कोई परेशानी है?'
-        : 'How many days have you had the fever and cough? Is the fever mild or high, and do you have any difficulty breathing?';
+        ? 'मैं आपके सही इलाज के लिए मदद करूँगा। आपको बुखार कितने दिनों से है?'
+        : 'I can help you find the right care. How long have you had the fever?';
 
       const chips = lang === 'hi'
-        ? ['2 दिनों से, हल्का बुखार', 'कल से तेज़ बुखार है', 'सांस में कोई दिक्कत नहीं']
-        : ['Started 2 days ago, mild fever', 'High fever since yesterday', 'No breathing trouble, just cough'];
+        ? ['2 दिनों से', 'कल से', 'आज सुबह से', '1 हफ्ते से अधिक']
+        : ['2 days', 'Since yesterday', 'Started today', 'More than a week'];
 
       return TriageStateMachine.buildFollowupResponse(question, chips, state);
     }
 
-    // Step 2: Finalize
+    // Question 2 (Turn 2): Associated symptoms
+    if (state.turnCount < 3) {
+      state.stage = 'asking_followup_2';
+      const question = lang === 'hi'
+        ? 'क्या आपको खांसी, गले में खराश, बदन दर्द, उल्टी या कोई अन्य लक्षण भी हैं?'
+        : 'Do you also have cough, sore throat, body pain, vomiting, or any other symptoms?';
+
+      const chips = lang === 'hi'
+        ? ['खांसी और बदन दर्द', 'गले में खराश और ठंड लगना', 'सिर्फ बुखार है']
+        : ['Cough and body pain', 'Sore throat & chills', 'Only fever, no other symptoms'];
+
+      return TriageStateMachine.buildFollowupResponse(question, chips, state);
+    }
+
+    // Question 3 (Turn 3): Warning signs / red flags
+    if (state.difficultyBreathing === null && state.turnCount < 4) {
+      state.stage = 'asking_followup_2';
+      const question = lang === 'hi'
+        ? 'क्या आपको सांस लेने में तकलीफ, सीने में दर्द, बेचैनी या बहुत तेज़ बुखार है?'
+        : 'Do you have difficulty breathing, chest pain, confusion, or very high/persistent fever?';
+
+      const chips = lang === 'hi'
+        ? ['कोई गंभीर लक्षण नहीं है', 'सांस लेने में हल्की तकलीफ', 'सिर्फ हल्का बुखार है']
+        : ['No severe symptoms', 'Difficulty breathing', 'Mild fever only'];
+
+      return TriageStateMachine.buildFollowupResponse(question, chips, state);
+    }
+
+    // Finalize triage after 2-3 questions answered
     return TriageStateMachine.finalizeTriage(state, lang);
   }
 
   /**
    * HEADACHE FLOW:
-   * Turn 1: Duration/onset + Location + Severity + Red flags (vomiting, blurry vision, neck stiffness)
-   * Turn 2: Complete -> Guidance + Doctor Recommendation
-   * STRICT GUARD: NEVER mention pregnancy, pre-eclampsia, diabetes, etc.
+   * Turn 1: Duration / onset
+   * Turn 2: Associated symptoms (nausea, vomiting, throbbing, light sensitivity)
+   * Turn 3: Warning signs (sudden severe pain, blurry vision, stiff neck, confusion)
+   * Turn 4+: Finalize assessment & Doctor recommendation
    */
   private static handleHeadache(state: TriageState, lang: 'en' | 'hi' | 'ne'): AIRouterResponse {
     state.recommendedSpecialty = 'General Medicine';
 
-    if (state.turnCount < 2 || !state.duration) {
+    // Question 1 (Turn 1): Duration
+    if (!state.duration && state.turnCount < 2) {
       state.stage = 'asking_followup_1';
       const question = lang === 'hi'
-        ? 'सिरदर्द कब शुरू हुआ और दर्द कहाँ है? क्या यह अचानक बहुत तेज़ हुआ, और क्या उल्टी, धुंधला दिखना या गर्दन में अकड़न है?'
-        : 'When did the headache start and where does it hurt? Is it sudden or unusually severe, and do you have vomiting, blurry vision, or neck stiffness?';
+        ? 'मैं आपके सही इलाज के लिए मदद करूँगा। यह सिरदर्द कब से है और क्या यह अचानक बहुत तेज़ शुरू हुआ?'
+        : 'I can help you find the right care. How long have you had the headache, and did it start suddenly?';
 
       const chips = lang === 'hi'
-        ? ['सुबह से हल्का सिरदर्द है', 'अचानक बहुत तेज़ दर्द हुआ', 'उल्टी या चक्कर नहीं है']
-        : ['Dull headache since morning', 'Sudden severe pain', 'Throbbing on one side', 'No vomiting or vision issues'];
+        ? ['सुबह से', '2 दिनों से', 'अचानक बहुत तेज़ दर्द हुआ', 'कुछ घंटों से']
+        : ['Since morning', '2 days', 'Sudden severe pain', 'A few hours'];
+
+      return TriageStateMachine.buildFollowupResponse(question, chips, state);
+    }
+
+    // Question 2 (Turn 2): Associated symptoms
+    if (state.turnCount < 3) {
+      state.stage = 'asking_followup_2';
+      const question = lang === 'hi'
+        ? 'क्या आपको जी मिचलाना, उल्टी, रोशनी से परेशानी या सिर के एक तरफ तेज़ दर्द है?'
+        : 'Do you also have nausea, sensitivity to light, vomiting, or throbbing on one side?';
+
+      const chips = lang === 'hi'
+        ? ['जी मिचलाना और चक्कर', 'एक तरफ धड़कता दर्द', 'उल्टी या चक्कर नहीं है']
+        : ['Nausea and dizziness', 'Throbbing on one side', 'No nausea or vomiting'];
+
+      return TriageStateMachine.buildFollowupResponse(question, chips, state);
+    }
+
+    // Question 3 (Turn 3): Warning signs
+    if (state.turnCount < 4) {
+      state.stage = 'asking_followup_2';
+      const question = lang === 'hi'
+        ? 'क्या अचानक धुंधला दिखना, बोलने में दिक्कत, या गर्दन में बहुत अकड़न है?'
+        : 'Do you have sudden blurred vision, confusion, difficulty speaking, or a very stiff neck?';
+
+      const chips = lang === 'hi'
+        ? ['कोई दृष्टि समस्या या अकड़न नहीं', 'गर्दन में अकड़न है', 'चक्कर आ रहे हैं']
+        : ['No vision issues or stiff neck', 'Stiff neck and headache', 'Feeling dizzy'];
 
       return TriageStateMachine.buildFollowupResponse(question, chips, state);
     }
@@ -292,21 +363,52 @@ export class TriageStateMachine {
 
   /**
    * ABDOMINAL / STOMACH PAIN FLOW:
-   * Turn 1: Exact location (upper/lower right/all over) + Duration + Associated (vomiting, diarrhea, fever)
-   * Turn 2: Complete -> Home guidance + Doctor recommendation
+   * Turn 1: Duration & location
+   * Turn 2: Associated symptoms (vomiting, diarrhea, acidity, fever)
+   * Turn 3: Warning signs (unbearable sharp pain, continuous vomiting, rigid belly)
+   * Turn 4+: Finalize assessment & Doctor recommendation
    */
   private static handleAbdominal(state: TriageState, lang: 'en' | 'hi' | 'ne'): AIRouterResponse {
     state.recommendedSpecialty = 'General Medicine';
 
-    if (state.turnCount < 2 || !state.bodyLocation || !state.duration) {
+    // Question 1 (Turn 1): Duration & location
+    if ((!state.duration || !state.bodyLocation) && state.turnCount < 2) {
       state.stage = 'asking_followup_1';
       const question = lang === 'hi'
-        ? 'पेट में दर्द ठीक कहाँ हो रहा है (ऊपर, दाईं तरफ, या पूरे पेट में)? क्या जी मिचलाना, उल्टी, दस्त या बुखार भी है?'
-        : 'Where in your stomach does it hurt (upper, lower right, or all over), and do you have nausea, vomiting, diarrhea, or fever?';
+        ? 'मैं आपके सही इलाज के लिए मदद करूँगा। पेट में दर्द कब से है और ठीक कहाँ दर्द हो रहा है?'
+        : 'I can help you find the right care. How long have you had the stomach pain, and where in your stomach does it hurt?';
 
       const chips = lang === 'hi'
-        ? ['खाने के बाद ऊपर पेट में दर्द', 'दाईं तरफ नीचे तेज़ दर्द', 'हल्का दर्द और दस्त']
-        : ['Upper stomach after eating', 'Lower right sharp pain', 'Mild cramping with loose motion', 'Pain for 1 day'];
+        ? ['कल से ऊपर पेट में दर्द', 'दाईं तरफ नीचे तेज़ दर्द', 'पूरे पेट में मरोड़']
+        : ['Upper stomach since yesterday', 'Lower right sharp pain', 'Whole belly cramping'];
+
+      return TriageStateMachine.buildFollowupResponse(question, chips, state);
+    }
+
+    // Question 2 (Turn 2): Associated symptoms
+    if (state.turnCount < 3) {
+      state.stage = 'asking_followup_2';
+      const question = lang === 'hi'
+        ? 'क्या आपको उल्टी, दस्त, बुखार या पेट में जलन भी है?'
+        : 'Do you also have vomiting, loose motions (diarrhea), fever, or burning sensation?';
+
+      const chips = lang === 'hi'
+        ? ['दस्त और मरोड़', 'उल्टी और जी मिचलाना', 'सिर्फ हल्का पेट दर्द']
+        : ['Loose motions and cramps', 'Vomiting and nausea', 'Only mild pain'];
+
+      return TriageStateMachine.buildFollowupResponse(question, chips, state);
+    }
+
+    // Question 3 (Turn 3): Warning signs
+    if (state.turnCount < 4) {
+      state.stage = 'asking_followup_2';
+      const question = lang === 'hi'
+        ? 'क्या दर्द बहुत तेज़ व असहनीय है, पेट छूने पर कड़ा है, या लगातार उल्टी आ रही है?'
+        : 'Is the pain unbearable or rigid, and do you have blood in stool or continuous vomiting?';
+
+      const chips = lang === 'hi'
+        ? ['कोई गंभीर उल्टी या खून नहीं', 'दर्द सहने योग्य है', 'तेज़ चुभने वाला दर्द']
+        : ['No blood or severe vomiting', 'Pain is manageable', 'Severe sharp pain'];
 
       return TriageStateMachine.buildFollowupResponse(question, chips, state);
     }
@@ -323,10 +425,20 @@ export class TriageStateMachine {
     if (!state.duration && state.turnCount < 2) {
       state.stage = 'asking_followup_1';
       const question = lang === 'hi'
-        ? 'यह खुजली या दाने कब से हैं? क्या इसमें जलन, सूजन या मवाद आ रहा है?'
-        : 'How long have you had this rash or itching? Is there burning, swelling, or any spreading redness?';
+        ? 'मैं आपके सही इलाज के लिए मदद करूँगा। यह खुजली या दाने कब से हैं?'
+        : 'I can help you find the right care. How long have you had this rash or itching?';
 
-      const chips = ['Started 2 days ago', 'Severe itching', 'Spreading on hands/body'];
+      const chips = ['Started 2 days ago', 'Since yesterday', 'Past week'];
+      return TriageStateMachine.buildFollowupResponse(question, chips, state);
+    }
+
+    if (state.turnCount < 3) {
+      state.stage = 'asking_followup_2';
+      const question = lang === 'hi'
+        ? 'क्या इसमें जलन, सूजन, मवाद या तेजी से फैलने वाले लाल चकत्ते हैं?'
+        : 'Is there burning, swelling, pus, or rapidly spreading redness?';
+
+      const chips = ['Severe itching only', 'Swelling and redness', 'No pus or swelling'];
       return TriageStateMachine.buildFollowupResponse(question, chips, state);
     }
 
@@ -334,16 +446,22 @@ export class TriageStateMachine {
   }
 
   /**
-   * CHEST / CARDIO (Non-emergency mild or general questions)
+   * CHEST / CARDIO (Non-emergency mild discomfort)
    */
   private static handleChestCardio(state: TriageState, lang: 'en' | 'hi' | 'ne'): AIRouterResponse {
     state.recommendedSpecialty = 'Cardiology';
 
-    // If severe or sudden -> Emergency override triggers earlier in checkEmergencyRedFlags.
     if (!state.duration && state.turnCount < 2) {
       state.stage = 'asking_followup_1';
-      const question = 'Did the chest discomfort start after exertion or eating? Do you feel any sweating, dizziness, or shortness of breath?';
-      const chips = ['After physical work', 'Mild burning after meals', 'Shortness of breath'];
+      const question = 'Did the chest discomfort start after physical exertion, or after eating?';
+      const chips = ['After physical work', 'Mild burning after meals', 'A few hours ago'];
+      return TriageStateMachine.buildFollowupResponse(question, chips, state);
+    }
+
+    if (state.turnCount < 3) {
+      state.stage = 'asking_followup_2';
+      const question = 'Do you feel any sweating, dizziness, shortness of breath, or pain spreading to your arm or jaw?';
+      const chips = ['No sweating or dizziness', 'Mild shortness of breath', 'Only mild acidity'];
       return TriageStateMachine.buildFollowupResponse(question, chips, state);
     }
 
@@ -362,8 +480,15 @@ export class TriageStateMachine {
 
     if (!state.duration && state.turnCount < 2) {
       state.stage = 'asking_followup_1';
-      const question = 'How long have you had this pain or discomfort? Do you have any discharge, redness, or difficulty hearing/seeing?';
-      const chips = ['Started yesterday', 'Mild pain, no discharge', 'Redness and irritation'];
+      const question = 'I can help you find the right care. How long have you had this pain or discomfort?';
+      const chips = ['Started yesterday', '2 days ago', 'Since morning'];
+      return TriageStateMachine.buildFollowupResponse(question, chips, state);
+    }
+
+    if (state.turnCount < 3) {
+      state.stage = 'asking_followup_2';
+      const question = 'Do you have any discharge, redness, or difficulty hearing or seeing?';
+      const chips = ['Mild pain, no discharge', 'Redness and irritation', 'Decreased hearing'];
       return TriageStateMachine.buildFollowupResponse(question, chips, state);
     }
 
@@ -376,13 +501,36 @@ export class TriageStateMachine {
   private static handleGeneral(state: TriageState, lang: 'en' | 'hi' | 'ne'): AIRouterResponse {
     state.recommendedSpecialty = 'General Medicine';
 
-    if (!state.chiefComplaint || state.turnCount < 2) {
+    // Question 1 (Turn 1): Duration
+    if (!state.duration && state.turnCount < 2) {
       state.stage = 'asking_followup_1';
       const question = lang === 'hi'
-        ? 'कृपया अपनी समस्या के बारे में थोड़ा और बताएं। यह लक्षण कब से है और क्या यह हल्का है या तेज़?'
-        : 'Please tell me a bit more about what you are experiencing. How long have you had this and is it mild or severe?';
+        ? 'मैं आपके सही इलाज के लिए मदद करूँगा। आपको यह लक्षण कितने दिनों से है?'
+        : 'I can help you find the right care. How long have you had these symptoms?';
 
-      const chips = ['Started 2 days ago', 'Mild discomfort', 'Need doctor checkup'];
+      const chips = ['2 days', 'Since yesterday', 'Started today', 'More than a week'];
+      return TriageStateMachine.buildFollowupResponse(question, chips, state);
+    }
+
+    // Question 2 (Turn 2): Associated symptoms
+    if (state.turnCount < 3) {
+      state.stage = 'asking_followup_2';
+      const question = lang === 'hi'
+        ? 'क्या आपको बुखार, बदन दर्द, उल्टी, कमजोरी या कोई अन्य लक्षण भी है?'
+        : 'Do you also have fever, body pain, vomiting, weakness, or any other symptoms?';
+
+      const chips = ['Body pain and weakness', 'Mild discomfort only', 'No other symptoms'];
+      return TriageStateMachine.buildFollowupResponse(question, chips, state);
+    }
+
+    // Question 3 (Turn 3): Warning signs
+    if (state.turnCount < 4) {
+      state.stage = 'asking_followup_2';
+      const question = lang === 'hi'
+        ? 'क्या आपको सांस लेने में तकलीफ, सीने में दर्द, या बहुत ज्यादा कमजोरी है?'
+        : 'Do you have difficulty breathing, chest pain, confusion, or very high fever?';
+
+      const chips = ['No severe symptoms', 'Feeling very weak', 'Breathing is normal'];
       return TriageStateMachine.buildFollowupResponse(question, chips, state);
     }
 
@@ -434,17 +582,24 @@ export class TriageStateMachine {
     // Format concise triage note for doctor
     const formattedNote = TriageStateMachine.formatTriageNote(structuredSummary);
 
-    // Build natural response text (1-3 sentences)
+    // Build natural response text (concise assessment + emergency advisory)
     let responseText = '';
-    const complaintText = state.chiefComplaint ? state.chiefComplaint : 'your symptoms';
-    const locText = state.bodyLocation ? ` (${state.bodyLocation})` : '';
+    const isUrgent = state.urgency === 'high' || state.otherRedFlags.length > 0 || state.difficultyBreathing;
 
     if (lang === 'hi') {
-      responseText = `आपकी जानकारी नोट कर ली गई है।\n\n• **प्राथमिक सलाह:** ${homeCareTip}\n• **अगला कदम:** आपके लक्षणों के अनुसार प्राथमिक स्वास्थ्य केंद्र (PHC) में **${state.recommendedSpecialty}** डॉक्टर से जांच कराना उचित रहेगा। नीचे दिए गए कार्ड से स्लॉट बुक कर सकते हैं।`;
+      if (isUrgent) {
+        responseText = `आपके लक्षणों के आधार पर **${state.recommendedSpecialty}** उचित रहेगा।\n\nप्राथमिक सलाह: ${homeCareTip}\n\nयदि आपको सांस लेने में गंभीर तकलीफ, सीने में दर्द, बेचैनी, या अन्य गंभीर लक्षण हों, तो तुरंत आपातकालीन चिकित्सा सहायता लें।`;
+      } else {
+        responseText = `आपके लक्षणों के आधार पर **${state.recommendedSpecialty}** उचित रहेगा।\n\nयदि आपको सांस लेने में गंभीर तकलीफ, सीने में दर्द, बेचैनी, या अन्य गंभीर लक्षण हों, तो तुरंत आपातकालीन चिकित्सा सहायता लें।`;
+      }
     } else if (lang === 'ne') {
-      responseText = `तपाईंको जानकारी सुरक्षित गरिएको छ।\n\n• **सल्लाह:** ${homeCareTip}\n• **अर्को कदम:** स्वास्थ्य केन्द्रका **${state.recommendedSpecialty}** डाक्टरसँग परामर्श लिनु उपयुक्त हुनेछ।`;
+      responseText = `तपाईंको लक्षणहरूको आधारमा **${state.recommendedSpecialty}** उचित हुनेछ।\n\nयदि तपाईंलाई सास फेर्न गाह्रो हुने, छाती दुख्ने वा अन्य गम्भीर लक्षणहरू देखिएमा तुरुन्तै आपतकालीन चिकित्सा सेवा लिनुहोस्।`;
     } else {
-      responseText = `Based on your reported symptoms of ${complaintText}${locText}:\n\n• **Home Guidance:** ${homeCareTip}\n• **Recommendation:** A physical evaluation by our **${state.recommendedSpecialty}** doctor at your local Primary Health Centre (PHC) is recommended. Please book a slot below.`;
+      if (isUrgent) {
+        responseText = `Based on your symptoms, **${state.recommendedSpecialty}** would be appropriate.\n\nImmediate care: ${homeCareTip}\n\nIf you have severe breathing difficulty, chest pain, confusion, or other serious symptoms, seek emergency medical care immediately.`;
+      } else {
+        responseText = `Based on your symptoms, **${state.recommendedSpecialty}** would be appropriate.\n\nIf you have severe breathing difficulty, chest pain, confusion, or other serious symptoms, seek emergency medical care immediately.`;
+      }
     }
 
     const assessment: PatientSymptomAssessment = {

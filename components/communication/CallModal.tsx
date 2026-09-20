@@ -40,22 +40,7 @@ export const CallModal: React.FC<CallModalProps> = ({
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Pulse animation for voice calls / ringing state
-  useEffect(() => {
-    if (visible && callState && (callState.status === 'ringing' || callState.status === 'initiating' || callState.callType === 'voice')) {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.3, duration: 800, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-        ])
-      );
-      loop.start();
-      return () => loop.stop();
-    }
-  }, [visible, callState?.status, callState?.callType]);
 
   // Subscribe to engine events
   useEffect(() => {
@@ -134,6 +119,18 @@ export const CallModal: React.FC<CallModalProps> = ({
     onClose();
   };
 
+  const cleanPeerName = (peerName || 'Doctor')
+    .replace(/(Dr\.?\s+)+Dr\.?/gi, 'Dr.')
+    .replace(/^(Dr\.?\s*)+/i, 'Dr. ')
+    .trim();
+
+  const cleanErrorMsg = errorMsg
+    ? errorMsg
+        .replace(/(Dr\.?\s+)+Dr\.?/gi, 'Dr.')
+        .replace(/^(Dr\.?\s*)+/i, 'Dr. ')
+        .trim()
+    : '';
+
   const formatDuration = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -141,7 +138,12 @@ export const CallModal: React.FC<CallModalProps> = ({
   };
 
   const getStatusText = () => {
-    if (errorMsg) return errorMsg;
+    if (cleanErrorMsg) {
+      if (/offline/i.test(cleanErrorMsg)) return 'Currently offline';
+      if (/declined/i.test(cleanErrorMsg)) return 'Call declined';
+      if (/no answer|missed|timeout/i.test(cleanErrorMsg)) return 'No answer';
+      return 'Call ended';
+    }
     switch (callState?.status) {
       case 'initiating': return 'Calling…';
       case 'ringing': return 'Ringing…';
@@ -156,98 +158,99 @@ export const CallModal: React.FC<CallModalProps> = ({
 
   // ── RENDER ─────────────────────────────────────────────────────────────
 
-  const renderVoiceBackground = () => (
-    <View style={styles.voiceBg}>
-      <View style={styles.voiceGradient}>
-        {/* Animated pulse rings */}
-        <Animated.View style={[styles.pulseRing, styles.pulseRing3, { transform: [{ scale: pulseAnim }] }]} />
-        <Animated.View style={[styles.pulseRing, styles.pulseRing2, { transform: [{ scale: Animated.multiply(pulseAnim, 0.85) }] }]} />
-        <Animated.View style={[styles.pulseRing, styles.pulseRing1, { transform: [{ scale: Animated.multiply(pulseAnim, 0.7) }] }]} />
-
-        {/* Avatar */}
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {(peerName || '?').charAt(0).toUpperCase()}
-          </Text>
-        </View>
-
-        {/* Name & Status */}
-        <Text style={styles.voiceName}>{peerName}</Text>
-        <Text style={styles.voiceStatus}>{getStatusText()}</Text>
-      </View>
-    </View>
-  );
-
-  const renderVideoBackground = () => (
-    <View style={styles.videoBg}>
-      {Platform.OS !== 'web' && remoteStream && NativeRTCView && (
-        <NativeRTCView
-          streamURL={(remoteStream as any).toURL()}
-          style={StyleSheet.absoluteFillObject}
-          objectFit="cover"
-        />
-      )}
-      {/* Remote video (full screen) */}
-      {Platform.OS === 'web' && (
-        <video
-          ref={remoteVideoRef as any}
-          autoPlay
-          playsInline
-          style={{
-            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-            objectFit: 'cover', backgroundColor: '#0F172A',
-          } as any}
-        />
-      )}
-
-      {/* If no remote stream yet, show placeholder */}
-      {!remoteStream && (
-        <View style={styles.videoPlaceholder}>
+  const renderVoiceBackground = () => {
+    const nameWithoutDr = cleanPeerName.replace(/^Dr\.?\s*/i, '');
+    const avatarLetter = (nameWithoutDr.charAt(0) || cleanPeerName.charAt(0) || '?').toUpperCase();
+    return (
+      <View style={styles.voiceBg}>
+        <View style={styles.voiceGradient}>
+          {/* Avatar */}
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{(peerName || '?').charAt(0).toUpperCase()}</Text>
+            <Text style={styles.avatarText}>{avatarLetter}</Text>
           </View>
-          <Text style={styles.voiceName}>{peerName}</Text>
+
+          {/* Name & Status */}
+          <Text style={styles.voiceName}>{cleanPeerName}</Text>
           <Text style={styles.voiceStatus}>{getStatusText()}</Text>
         </View>
-      )}
+      </View>
+    );
+  };
 
-      {/* Local self-preview (floating pip) */}
-      {Platform.OS === 'web' && localStream && (
-        <View style={styles.localPip}>
-          <video
-            ref={localVideoRef as any}
-            autoPlay
-            playsInline
-            muted
-            style={{
-              width: '100%', height: '100%', objectFit: 'cover',
-              borderRadius: 12, transform: 'scaleX(-1)',
-            } as any}
-          />
-          {callState?.isCameraOff && (
-            <View style={styles.pipCameraOff}>
-              <MaterialIcons name="videocam-off" size={20} color="#FFF" />
-            </View>
-          )}
-        </View>
-      )}
-      {Platform.OS !== 'web' && localStream && NativeRTCView && (
-        <View style={styles.localPip}>
+  const renderVideoBackground = () => {
+    const nameWithoutDr = cleanPeerName.replace(/^Dr\.?\s*/i, '');
+    const avatarLetter = (nameWithoutDr.charAt(0) || cleanPeerName.charAt(0) || '?').toUpperCase();
+    return (
+      <View style={styles.videoBg}>
+        {Platform.OS !== 'web' && remoteStream && NativeRTCView && (
           <NativeRTCView
-            streamURL={(localStream as any).toURL()}
+            streamURL={(remoteStream as any).toURL()}
             style={StyleSheet.absoluteFillObject}
             objectFit="cover"
-            mirror
           />
-          {callState?.isCameraOff && (
-            <View style={styles.pipCameraOff}>
-              <MaterialIcons name="videocam-off" size={20} color="#FFF" />
+        )}
+        {/* Remote video (full screen) */}
+        {Platform.OS === 'web' && (
+          <video
+            ref={remoteVideoRef as any}
+            autoPlay
+            playsInline
+            style={{
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              objectFit: 'cover', backgroundColor: '#0F172A',
+            } as any}
+          />
+        )}
+
+        {/* If no remote stream yet, show placeholder */}
+        {!remoteStream && (
+          <View style={styles.videoPlaceholder}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{avatarLetter}</Text>
             </View>
-          )}
-        </View>
-      )}
-    </View>
-  );
+            <Text style={styles.voiceName}>{cleanPeerName}</Text>
+            <Text style={styles.voiceStatus}>{getStatusText()}</Text>
+          </View>
+        )}
+
+        {/* Local self-preview (floating pip) */}
+        {Platform.OS === 'web' && localStream && (
+          <View style={styles.localPip}>
+            <video
+              ref={localVideoRef as any}
+              autoPlay
+              playsInline
+              muted
+              style={{
+                width: '100%', height: '100%', objectFit: 'cover',
+                borderRadius: 12, transform: 'scaleX(-1)',
+              } as any}
+            />
+            {callState?.isCameraOff && (
+              <View style={styles.pipCameraOff}>
+                <MaterialIcons name="videocam-off" size={20} color="#FFF" />
+              </View>
+            )}
+          </View>
+        )}
+        {Platform.OS !== 'web' && localStream && NativeRTCView && (
+          <View style={styles.localPip}>
+            <NativeRTCView
+              streamURL={(localStream as any).toURL()}
+              style={StyleSheet.absoluteFillObject}
+              objectFit="cover"
+              mirror
+            />
+            {callState?.isCameraOff && (
+              <View style={styles.pipCameraOff}>
+                <MaterialIcons name="videocam-off" size={20} color="#FFF" />
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+    );
+  };
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={handleEndCall} statusBarTranslucent>
@@ -269,38 +272,52 @@ export const CallModal: React.FC<CallModalProps> = ({
           />
         )}
 
-        {/* Top bar (always visible during controls) */}
+        {/* Top bar (visible during controls) */}
         {showControls && (
           <View style={styles.topBar}>
             <View style={styles.topBarContent}>
-              <View style={styles.topLeft}>
-                <MaterialIcons
-                  name={isVideo ? 'videocam' : 'call'}
-                  size={16}
-                  color="#34D399"
-                />
-                <Text style={styles.topName} numberOfLines={1}>{peerName}</Text>
-              </View>
-              <View style={styles.topRight}>
-                {isConnected && (
-                  <View style={styles.durationBadge}>
-                    <View style={styles.liveDot} />
-                    <Text style={styles.durationText}>{formatDuration(callState!.duration)}</Text>
+              {isVideo ? (
+                <>
+                  <View style={styles.topLeft}>
+                    <MaterialIcons name="videocam" size={18} color="#34D399" />
+                    <Text style={styles.topName} numberOfLines={1}>{cleanPeerName}</Text>
                   </View>
-                )}
-                {!isConnected && (
-                  <Text style={styles.statusTextTop}>{getStatusText()}</Text>
-                )}
-              </View>
+                  <View style={styles.topRight}>
+                    {isConnected ? (
+                      <View style={styles.durationBadge}>
+                        <View style={styles.liveDot} />
+                        <Text style={styles.durationText}>{formatDuration(callState!.duration)}</Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.statusTextTop}>{getStatusText()}</Text>
+                    )}
+                  </View>
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    style={styles.topBackBtn}
+                    onPress={handleEndCall}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  >
+                    <MaterialIcons name="keyboard-arrow-down" size={28} color="#94A3B8" />
+                  </TouchableOpacity>
+                  <View style={styles.securityBadge}>
+                    <MaterialIcons name="lock" size={12} color="#64748B" />
+                    <Text style={styles.securityText}>End-to-end encrypted</Text>
+                  </View>
+                  <View style={{ width: 28 }} />
+                </>
+              )}
             </View>
           </View>
         )}
 
-        {/* Error overlay */}
-        {errorMsg && !['Call was declined', 'No answer'].includes(errorMsg) && (
+        {/* Error overlay badge */}
+        {cleanErrorMsg && !['Call was declined', 'No answer'].includes(cleanErrorMsg) && (
           <View style={styles.errorOverlay}>
-            <MaterialIcons name="error-outline" size={24} color="#FCA5A5" />
-            <Text style={styles.errorText}>{errorMsg}</Text>
+            <MaterialIcons name="cloud-off" size={18} color="#F87171" />
+            <Text style={styles.errorText}>{cleanErrorMsg}</Text>
           </View>
         )}
 
@@ -309,66 +326,74 @@ export const CallModal: React.FC<CallModalProps> = ({
           <View style={styles.bottomBar}>
             <View style={styles.controlsRow}>
               {/* Mic toggle */}
-              <TouchableOpacity
-                style={[styles.controlBtn, callState?.isMuted && styles.controlBtnActive]}
-                onPress={() => engine.toggleMute()}
-                activeOpacity={0.7}
-              >
-                <MaterialIcons
-                  name={callState?.isMuted ? 'mic-off' : 'mic'}
-                  size={24}
-                  color="#FFF"
-                />
-                <Text style={styles.controlLabel}>
-                  {callState?.isMuted ? 'Unmute' : 'Mute'}
-                </Text>
-              </TouchableOpacity>
-
-              {/* Camera toggle (video calls only) */}
-              {isVideo && (
+              <View style={styles.controlItem}>
                 <TouchableOpacity
-                  style={[styles.controlBtn, callState?.isCameraOff && styles.controlBtnActive]}
-                  onPress={() => engine.toggleCamera()}
+                  style={[styles.controlBtn, callState?.isMuted && styles.controlBtnActive]}
+                  onPress={() => engine.toggleMute()}
                   activeOpacity={0.7}
                 >
                   <MaterialIcons
-                    name={callState?.isCameraOff ? 'videocam-off' : 'videocam'}
-                    size={24}
+                    name={callState?.isMuted ? 'mic-off' : 'mic'}
+                    size={26}
                     color="#FFF"
                   />
+                </TouchableOpacity>
+                <Text style={styles.controlLabel}>
+                  {callState?.isMuted ? 'Unmute' : 'Mute'}
+                </Text>
+              </View>
+
+              {/* Camera toggle (video calls only) */}
+              {isVideo && (
+                <View style={styles.controlItem}>
+                  <TouchableOpacity
+                    style={[styles.controlBtn, callState?.isCameraOff && styles.controlBtnActive]}
+                    onPress={() => engine.toggleCamera()}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialIcons
+                      name={callState?.isCameraOff ? 'videocam-off' : 'videocam'}
+                      size={26}
+                      color="#FFF"
+                    />
+                  </TouchableOpacity>
                   <Text style={styles.controlLabel}>
                     {callState?.isCameraOff ? 'Camera On' : 'Camera Off'}
                   </Text>
-                </TouchableOpacity>
+                </View>
               )}
 
               {/* Switch call mode (voice ↔ video) */}
               {isConnected && (
-                <TouchableOpacity
-                  style={styles.controlBtn}
-                  onPress={() => engine.switchCallMode(isVideo ? 'voice' : 'video')}
-                  activeOpacity={0.7}
-                >
-                  <MaterialIcons
-                    name={isVideo ? 'phone' : 'videocam'}
-                    size={24}
-                    color="#FFF"
-                  />
+                <View style={styles.controlItem}>
+                  <TouchableOpacity
+                    style={styles.controlBtn}
+                    onPress={() => engine.switchCallMode(isVideo ? 'voice' : 'video')}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialIcons
+                      name={isVideo ? 'phone' : 'videocam'}
+                      size={26}
+                      color="#FFF"
+                    />
+                  </TouchableOpacity>
                   <Text style={styles.controlLabel}>
                     {isVideo ? 'Voice' : 'Video'}
                   </Text>
-                </TouchableOpacity>
+                </View>
               )}
 
               {/* End call */}
-              <TouchableOpacity
-                style={styles.endCallBtn}
-                onPress={handleEndCall}
-                activeOpacity={0.7}
-              >
-                <MaterialIcons name="call-end" size={28} color="#FFF" />
-                <Text style={styles.controlLabel}>End</Text>
-              </TouchableOpacity>
+              <View style={styles.controlItem}>
+                <TouchableOpacity
+                  style={styles.endCallBtn}
+                  onPress={handleEndCall}
+                  activeOpacity={0.7}
+                >
+                  <MaterialIcons name="call-end" size={28} color="#FFF" />
+                </TouchableOpacity>
+                <Text style={[styles.controlLabel, { color: '#F87171' }]}>End</Text>
+              </View>
             </View>
           </View>
         )}
@@ -399,51 +424,41 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F172A',
   },
   avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#087F8C',
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: '#0D9488',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.15)',
     zIndex: 5,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
   },
   avatarText: {
-    fontSize: 40,
+    fontSize: 42,
     fontWeight: '700',
     color: '#FFF',
   },
   voiceName: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#FFF',
+    color: '#F8FAFC',
     marginTop: 20,
     zIndex: 5,
+    textAlign: 'center',
   },
   voiceStatus: {
     fontSize: 14,
     color: '#94A3B8',
     marginTop: 6,
     zIndex: 5,
-  },
-  pulseRing: {
-    position: 'absolute',
-    borderRadius: 999,
-    borderWidth: 2,
-  },
-  pulseRing1: {
-    width: 130,
-    height: 130,
-    borderColor: 'rgba(8, 127, 140, 0.5)',
-  },
-  pulseRing2: {
-    width: 170,
-    height: 170,
-    borderColor: 'rgba(8, 127, 140, 0.3)',
-  },
-  pulseRing3: {
-    width: 210,
-    height: 210,
-    borderColor: 'rgba(8, 127, 140, 0.15)',
+    textAlign: 'center',
+    fontWeight: '500',
   },
 
   // ── Video Background ──
@@ -483,14 +498,29 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingTop: 48,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingBottom: 12,
-    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    zIndex: 10,
   },
   topBarContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  topBackBtn: {
+    padding: 4,
+  },
+  securityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  securityText: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+    letterSpacing: 0.2,
   },
   topLeft: {
     flexDirection: 'row',
@@ -499,7 +529,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   topName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: '#FFF',
   },
@@ -535,21 +565,25 @@ const styles = StyleSheet.create({
   // ── Error ──
   errorOverlay: {
     position: 'absolute',
-    top: 120,
-    left: 24,
-    right: 24,
+    top: 68,
+    alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(127, 29, 29, 0.85)',
+    gap: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 10,
+    borderRadius: 24,
+    maxWidth: '88%',
+    zIndex: 15,
   },
   errorText: {
     fontSize: 13,
-    color: '#FCA5A5',
-    flex: 1,
+    fontWeight: '500',
+    color: '#FECACA',
+    textAlign: 'center',
   },
 
   // ── Bottom Controls ──
@@ -558,38 +592,48 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    paddingBottom: 40,
-    paddingTop: 20,
+    paddingBottom: 36,
+    paddingTop: 16,
     paddingHorizontal: 24,
     backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    zIndex: 10,
   },
   controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-evenly',
   },
+  controlItem: {
+    alignItems: 'center',
+  },
   controlBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     backgroundColor: 'rgba(255,255,255,0.15)',
   },
   controlBtnActive: {
     backgroundColor: 'rgba(239, 68, 68, 0.6)',
   },
   controlLabel: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#CBD5E1',
-    marginTop: 4,
+    marginTop: 6,
+    fontWeight: '500',
   },
   endCallBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
     backgroundColor: '#DC2626',
+    elevation: 4,
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
   },
 });

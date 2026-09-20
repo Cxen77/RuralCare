@@ -17,11 +17,13 @@ import { TodayScreen } from './screens/TodayScreen';
 import { PatientsScreen } from './screens/PatientsScreen';
 import { ConsultScreen } from './screens/ConsultScreen';
 import { RxScreen } from './screens/RxScreen';
+import { EmergencyDashboardScreen } from './screens/EmergencyDashboardScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { LoadingOverlay, ClinicalLoadingScreen } from './components/ui';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { api, usePoll, session } from './services/api';
+import { io } from 'socket.io-client/dist/socket.io.js';
 import { getCallingEngine, IncomingCallInfo, CallType } from './services/communication/WebRTCCallingEngine';
 import { IncomingCallModal } from './components/communication/IncomingCallModal';
 import { CallModal } from './components/communication/CallModal';
@@ -50,6 +52,34 @@ function DoctorApp() {
     appointmentId: string;
     callType: CallType;
   } | null>(null);
+
+  // Urgent Emergency Alert Banner
+  const [urgentEmergency, setUrgentEmergency] = useState<any | null>(null);
+
+  useEffect(() => {
+    const socket = io('http://localhost:4000', {
+      path: '/socket.io',
+      transports: ['websocket', 'polling'],
+    });
+
+    socket.on('connect', () => {
+      socket.emit('join', { role: 'doctor' });
+    });
+
+    socket.on('emergency:created', (emg: any) => {
+      setUrgentEmergency(emg);
+    });
+
+    socket.on('emergency:alert', (payload: any) => {
+      if (payload?.emergency) {
+        setUrgentEmergency(payload.emergency);
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     const engine = getCallingEngine();
@@ -485,6 +515,23 @@ function DoctorApp() {
         onProfilePress={() => setActiveTab('profile')}
       />
 
+      {urgentEmergency && (
+        <TouchableOpacity
+          style={styles.emergencyAlertBanner}
+          onPress={() => {
+            setActiveTab('emergencies');
+            setUrgentEmergency(null);
+          }}
+          activeOpacity={0.85}
+        >
+          <MaterialIcons name="campaign" size={18} color="#FFFFFF" />
+          <Text style={styles.emergencyAlertBannerText} numberOfLines={1}>
+            🚨 LIVE ALERT: {urgentEmergency.emergencyType?.replace(/_/g, ' ').toUpperCase()} • Tap to dispatch / respond
+          </Text>
+          <MaterialIcons name="chevron-right" size={18} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
+
       <View style={styles.content}>
         {activeTab === 'today' && (
           <TodayScreen
@@ -523,6 +570,8 @@ function DoctorApp() {
         )}
 
         {activeTab === 'rx' && <RxScreen prescriptions={prescriptions} />}
+
+        {activeTab === 'emergencies' && <EmergencyDashboardScreen />}
 
         {activeTab === 'profile' && (
           <ProfileScreen
@@ -653,6 +702,22 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  emergencyAlertBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    ...Shadows.sm,
+  },
+  emergencyAlertBannerText: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   gate: {
     flex: 1,

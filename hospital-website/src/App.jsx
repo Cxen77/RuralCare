@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { api, usePoll } from './api.js';
+import { io } from 'socket.io-client';
 import HospitalLocationPickerModal from './components/HospitalLocationPickerModal.jsx';
 
 const URGENCY = {
@@ -20,6 +21,10 @@ export default function App({ user, onLogout }) {
   const [referralFilter, setReferralFilter] = useState('all'); // 'all', 'pending', 'accepted', 'emergency', 'rejected'
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [hospitalLocation, setHospitalLocation] = useState({ latitude: null, longitude: null, address: '' });
+
+  // Community Emergency Incident States
+  const [communityIncidents, setCommunityIncidents] = useState([]);
+  const [urgentCommunityAlert, setUrgentCommunityAlert] = useState(null);
 
   // Modal States
   const [showAddAmbulanceModal, setShowAddAmbulanceModal] = useState(false);
@@ -98,6 +103,82 @@ export default function App({ user, onLogout }) {
       });
     }
   }, [hospital]);
+
+  // Real-time Community Emergency Socket.IO
+  useEffect(() => {
+    api.get('/emergencies').then((data) => {
+      if (Array.isArray(data)) setCommunityIncidents(data);
+    }).catch(() => {});
+
+    const socket = io('http://localhost:4000', {
+      path: '/socket.io',
+      transports: ['websocket', 'polling'],
+    });
+
+    socket.on('connect', () => {
+      socket.emit('join', { role: 'hospital', hospitalId: user?.hospitalId || 'hosp-601' });
+    });
+
+    socket.on('emergency:created', (newInc) => {
+      setCommunityIncidents((prev) => [newInc, ...prev.filter((i) => (i.id || i._id) !== (newInc.id || newInc._id))]);
+      setUrgentCommunityAlert(newInc);
+    });
+
+    socket.on('emergency:alert', (payload) => {
+      if (payload?.emergency) {
+        setCommunityIncidents((prev) => [payload.emergency, ...prev.filter((i) => (i.id || i._id) !== (payload.emergency.id || payload.emergency._id))]);
+        setUrgentCommunityAlert(payload.emergency);
+      }
+    });
+
+    socket.on('emergency:updated', (updated) => {
+      setCommunityIncidents((prev) => prev.map((i) => ((i.id || i._id) === (updated.id || updated._id) ? updated : i)));
+    });
+
+    return () => socket.disconnect();
+  }, [user?.hospitalId]);
+
+  const handleDispatchToIncident = async (incident) => {
+    try {
+      const available = (ambulances.data || []).find((a) => a.status === 'available');
+      const vehicle = available ? available.vehicle : 'UP-53-AMB-108';
+      const driver = available ? available.driver : 'Assigned Pilot';
+      const phone = available ? available.driverPhone : '+91 94150 12345';
+
+      const incId = incident.id || incident._id;
+      await api.post(`/emergencies/${incId}/dispatch`, {
+        hospitalId: hospital.id,
+        hospitalName: hospital.name,
+        ambulanceId: available ? available.id : null,
+        vehicleNumber: vehicle,
+        driverName: driver,
+        driverPhone: phone,
+        etaMinutes: 10,
+      });
+
+      showToast(`Ambulance ${vehicle} dispatched to incident at ${incident.address}`);
+      api.get('/emergencies').then((data) => {
+        if (Array.isArray(data)) setCommunityIncidents(data);
+      });
+    } catch (err) {
+      showToast(err.message || 'Failed to dispatch to incident');
+    }
+  };
+
+  const handleResolveIncident = async (incident) => {
+    try {
+      const incId = incident.id || incident._id;
+      await api.post(`/emergencies/${incId}/resolve`, {
+        resolutionNotes: 'Patient safely transported to hospital emergency ward and stabilized.',
+      });
+      showToast('Community emergency marked as resolved.');
+      api.get('/emergencies').then((data) => {
+        if (Array.isArray(data)) setCommunityIncidents(data);
+      });
+    } catch (err) {
+      showToast(err.message || 'Failed to resolve incident');
+    }
+  };
 
   const referralList = referrals.data || [];
   const pendingReferrals = referralList.filter((r) => r.status === 'pending');
@@ -626,6 +707,44 @@ export default function App({ user, onLogout }) {
 
         {/* ── Canvas Body ── */}
         <main className="canvas-body">
+          {urgentCommunityAlert && (
+            <div style={{
+              background: 'linear-gradient(90deg, #dc2626, #b91c1c)',
+              color: '#fff',
+              padding: '12px 20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              boxShadow: '0 4px 12px rgba(220,38,38,0.3)',
+              marginBottom: 16,
+              borderRadius: 'var(--radius-md)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 700, fontSize: 13 }}>
+                <span className="material-symbols-outlined fill" style={{ fontSize: 22 }}>emergency</span>
+                <span>🚨 CITIZEN LIVE ACCIDENT REPORTED: {urgentCommunityAlert.emergencyType?.replace(/_/g, ' ').toUpperCase()} at {urgentCommunityAlert.address || 'GPS Coordinate Lock'}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className="btn btn-sm"
+                  style={{ background: '#fff', color: '#dc2626', fontWeight: 800 }}
+                  onClick={() => {
+                    setActiveNav('emergency');
+                    setUrgentCommunityAlert(null);
+                  }}
+                >
+                  Respond in Fleet Command
+                </button>
+                <button
+                  className="btn btn-sm btn-outline"
+                  style={{ borderColor: 'rgba(255,255,255,0.6)', color: '#fff' }}
+                  onClick={() => setUrgentCommunityAlert(null)}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
           {/* ══════════════════════════════════════════════════════════════════
               VIEW 1: DASHBOARD OVERVIEW
              ══════════════════════════════════════════════════════════════════ */}
@@ -1217,6 +1336,106 @@ export default function App({ user, onLogout }) {
                     Dispatch 108 Emergency
                   </button>
                 </div>
+              </div>
+
+              {/* Live Community Emergency Incidents from Citizen Care Map */}
+              <div className="panel-white-card" style={{ borderColor: 'var(--emergency-red)', borderLeftWidth: 4, marginBottom: 16 }}>
+                <div className="panel-title-bar">
+                  <h3 className="panel-heading" style={{ color: 'var(--emergency-red)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span className="material-symbols-outlined fill">campaign</span>
+                    Live Community Care Map Incident Reports ({communityIncidents.filter(i => i.status !== 'resolved').length} Active)
+                  </h3>
+                  <span className="chip chip-red">Direct Citizen Feed</span>
+                </div>
+
+                {communityIncidents.length === 0 ? (
+                  <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+                    No community emergencies reported. Active radar is monitoring citizen submissions.
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gap: 12 }}>
+                    {communityIncidents.slice(0, 10).map((inc) => {
+                      const incId = inc.id || inc._id;
+                      return (
+                        <div
+                          key={incId}
+                          style={{
+                            display: 'flex',
+                            gap: 14,
+                            background: inc.status === 'dispatched' ? '#eff6ff' : inc.status === 'resolved' ? '#f0fdf4' : '#fff5f5',
+                            border: `1px solid ${inc.status === 'dispatched' ? '#bfdbfe' : inc.status === 'resolved' ? '#bbf7d0' : '#fecaca'}`,
+                            borderRadius: 'var(--radius-md)',
+                            padding: 12,
+                            alignItems: 'center'
+                          }}
+                        >
+                          {inc.imageUrl && (
+                            <img
+                              src={inc.imageUrl}
+                              alt="Incident"
+                              style={{ width: 80, height: 65, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0' }}
+                            />
+                          )}
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontWeight: 800, fontSize: 13.5, color: '#0f172a' }}>
+                                🚨 {inc.emergencyType?.replace(/_/g, ' ').toUpperCase()}
+                              </span>
+                              <span className={`chip ${inc.status === 'resolved' ? 'chip-teal' : inc.status === 'dispatched' ? 'chip-navy' : 'chip-red'}`}>
+                                {inc.status?.toUpperCase()}
+                              </span>
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                {inc.createdAt ? new Date(inc.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--on-surface-variant)', marginTop: 2 }}>
+                              📍 {inc.address || `${inc.latitude}, ${inc.longitude}`}
+                            </div>
+                            {inc.description && (
+                              <div style={{ fontSize: 11.5, color: '#475569', fontStyle: 'italic', marginTop: 2 }}>
+                                "{inc.description}"
+                              </div>
+                            )}
+                            {inc.ambulanceVehicle && (
+                              <div style={{ fontSize: 11.5, color: '#1e40af', fontWeight: 600, marginTop: 2 }}>
+                                Assigned: {inc.ambulanceVehicle} ({inc.assignedHospitalName})
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, flexDirection: 'column' }}>
+                            {inc.status !== 'resolved' && inc.status !== 'dispatched' && (
+                              <button
+                                className="btn btn-danger btn-sm"
+                                onClick={() => handleDispatchToIncident(inc)}
+                              >
+                                <span className="material-symbols-outlined" style={{ fontSize: 15, marginRight: 4 }}>send</span>
+                                Dispatch Hospital Unit
+                              </button>
+                            )}
+                            {inc.status === 'dispatched' && (
+                              <button
+                                className="btn btn-success btn-sm"
+                                onClick={() => handleResolveIncident(inc)}
+                              >
+                                <span className="material-symbols-outlined" style={{ fontSize: 15, marginRight: 4 }}>check_circle</span>
+                                Mark Resolved
+                              </button>
+                            )}
+                            <a
+                              href={`https://www.google.com/maps/dir/?api=1&destination=${inc.latitude},${inc.longitude}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn btn-outline btn-sm"
+                              style={{ textAlign: 'center', fontSize: 11 }}
+                            >
+                              Open Map
+                            </a>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Active Emergency Assignments Panel */}

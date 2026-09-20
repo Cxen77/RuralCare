@@ -29,9 +29,14 @@ export const PatientHomeScreen: React.FC<PatientHomeScreenProps> = ({ onNavigate
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       {/* Emergency Banner */}
       <View style={styles.emergencyBanner}>
-        <View>
-          <Text style={styles.emergencyTitle}>Need Urgent Medical Help?</Text>
-          <Text style={styles.emergencySub}>Immediate 24/7 priority routing to ambulance & nearest PHC</Text>
+        <View style={styles.emergencyHeader}>
+          <View style={styles.emergencyIconWrap}>
+            <MaterialIcons name="local-hospital" size={24} color={Colors.error} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.emergencyTitle}>Need Urgent Medical Help?</Text>
+            <Text style={styles.emergencySub}>Immediate 24/7 priority routing to ambulance & nearest PHC</Text>
+          </View>
         </View>
         <Button label="108 Emergency Assistance" icon="call" variant="danger" block onPress={onOpenSos} />
       </View>
@@ -40,7 +45,7 @@ export const PatientHomeScreen: React.FC<PatientHomeScreenProps> = ({ onNavigate
       <Card radius={Radii.lg} elevation="sm" style={{ borderWidth: 1.5, borderColor: '#D4EBED' }}>
         <View style={styles.triageHeader}>
           <View style={styles.triageIcon}>
-            <MaterialIcons name="health-and-safety" size={24} color={Colors.primary} />
+            <MaterialIcons name="auto-awesome" size={24} color={Colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.triageTitle}>Tell us what you're feeling</Text>
@@ -50,7 +55,7 @@ export const PatientHomeScreen: React.FC<PatientHomeScreenProps> = ({ onNavigate
         <Text style={styles.triageDesc}>
           Describe symptoms in Hindi, Bhojpuri, or English to get instant triage guidance and find nearby PHC doctors.
         </Text>
-        <Button label="Start AI Health Check" icon="mic" block onPress={() => onNavigate('triage')} />
+        <Button label="Check Symptoms with AI" icon="mic" block onPress={() => onNavigate('triage')} />
       </Card>
 
       {/* Nearby Healthcare */}
@@ -65,7 +70,7 @@ export const PatientHomeScreen: React.FC<PatientHomeScreenProps> = ({ onNavigate
         </Card>
         <Card onPress={() => onNavigate('meds')} padding={0} radius={Radii.md} style={styles.categoryTile}>
           <View style={styles.categoryIconWrap}>
-            <MaterialIcons name="local-pharmacy" size={24} color={Colors.primary} />
+            <MaterialIcons name="medication" size={24} color={Colors.primary} />
           </View>
           <Text style={styles.categoryTitle}>Pharmacies</Text>
           <Text style={styles.categoryCount}>{pharmacies.length} nearby</Text>
@@ -113,13 +118,13 @@ export const PatientHomeScreen: React.FC<PatientHomeScreenProps> = ({ onNavigate
           <SectionHeader title="Prescriptions Ready" actionLabel="View All" onAction={() => onNavigate('meds')} />
           {pendingPrescriptions.map(rx => (
             <Card key={rx.id} onPress={() => onNavigate('meds')} padding={12} radius={Radii.md} style={styles.apptCard}>
-              <View style={[styles.apptIconWrap, { backgroundColor: Colors.tertiaryContainer }]}>
-                <MaterialIcons name="medication" size={20} color={Colors.tertiary} />
+              <View style={[styles.apptIconWrap, { backgroundColor: Colors.primaryLight }]}>
+                <MaterialIcons name="medication" size={20} color={Colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.apptTitle}>{rx.items.length} medicine{rx.items.length > 1 ? 's' : ''} prescribed</Text>
                 <Text style={styles.apptSub}>By {rx.doctorName} • {rx.diagnosis}</Text>
-                <Text style={[styles.apptMeta, { color: Colors.tertiary }]}>
+                <Text style={[styles.apptMeta, { color: Colors.primaryDark }]}>
                   {rx.dispensingStatus === 'pending' ? 'Ready for pharmacy pickup' : 'Partially dispensed'}
                 </Text>
               </View>
@@ -161,9 +166,28 @@ export const PatientHomeScreen: React.FC<PatientHomeScreenProps> = ({ onNavigate
       <Card padding={12} radius={Radii.md} bordered={false} elevation="none" style={{ backgroundColor: Colors.surfaceContainerLow }}>
         <Text style={styles.helplineHeading}>Direct Toll-Free Helplines</Text>
         <View style={styles.helplineRow}>
-          <Chip label="108 Ambulance" icon="emergency" size="sm" tone="primary" onPress={onOpenSos} />
-          <Chip label="104 Health Info" icon="support-agent" size="sm" tone="primary" />
-          <Chip label="14416 MANAS" icon="psychology" size="sm" tone="navy" />
+          <Chip
+            label="108 Ambulance"
+            icon="local-hospital"
+            size="sm"
+            tone="primary"
+            onPress={onOpenSos}
+            style={styles.helplineChip}
+          />
+          <Chip
+            label="104 Health"
+            icon="support-agent"
+            size="sm"
+            tone="primary"
+            style={styles.helplineChip}
+          />
+          <Chip
+            label="14416 MANAS"
+            icon="psychology"
+            size="sm"
+            tone="navy"
+            style={styles.helplineChip}
+          />
         </View>
       </Card>
     </ScrollView>
@@ -183,9 +207,11 @@ const styles = StyleSheet.create({
   statusDotOffline: { backgroundColor: Colors.outline },
   statusText: { fontSize: 11, fontWeight: '700', color: Colors.onTertiaryContainer },
   statusTextOffline: { color: Colors.onSurfaceVariant },
-  emergencyBanner: { backgroundColor: Colors.surfaceContainerLowest, borderWidth: 1, borderColor: Colors.outlineLight, borderRadius: Radii.lg, padding: Spacing.md, gap: 10, ...Shadows.sm },
+  emergencyBanner: { backgroundColor: Colors.surfaceContainerLowest, borderWidth: 1, borderColor: Colors.outlineLight, borderRadius: Radii.lg, padding: Spacing.md, gap: 12, ...Shadows.sm },
+  emergencyHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  emergencyIconWrap: { width: 42, height: 42, borderRadius: Radii.md, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center' },
   emergencyTitle: { fontSize: 15, fontWeight: '800', color: Colors.secondary },
-  emergencySub: { fontSize: 12, color: Colors.onSurfaceVariant, marginTop: 2, lineHeight: 16, marginBottom: 8 },
+  emergencySub: { fontSize: 12, color: Colors.onSurfaceVariant, marginTop: 2, lineHeight: 16 },
   triageHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
   triageIcon: { width: 42, height: 42, borderRadius: Radii.md, backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
   triageTitle: { fontSize: 16, fontWeight: '700', color: Colors.secondary },
@@ -207,5 +233,6 @@ const styles = StyleSheet.create({
   categoryTitle: { fontSize: 13.5, fontWeight: '700', color: Colors.secondary, letterSpacing: -0.2 },
   categoryCount: { fontSize: 11, color: Colors.onSurfaceVariant, marginTop: 2, textAlign: 'center' },
   helplineHeading: { fontSize: 11, fontWeight: '700', color: Colors.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
-  helplineRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  helplineRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'nowrap', width: '100%' },
+  helplineChip: { flex: 1, paddingHorizontal: 4, minWidth: 0 },
 });

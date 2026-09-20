@@ -89,12 +89,20 @@ export const PatientDoctorsScreen: React.FC<Props> = ({ onOpenBooking, onOpenDoc
   return (
     <>
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-      <TouchableOpacity style={styles.viewOnMapBtn} onPress={() => onOpenDoctorMap?.(filtered[0]?.id, filtered[0]?.name || '')}>
-        <MaterialIcons name="map" size={16} color={Colors.primary} />
-        <Text style={styles.viewOnMapText}>View on Map</Text>
-      </TouchableOpacity>
-      <Text style={styles.heading}>Find Nearby Doctors</Text>
-      <Text style={styles.subheading}>{filtered.length} doctors found • Sorted by distance</Text>
+      <View style={styles.headerRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.heading}>Find Nearby Doctors</Text>
+          <Text style={styles.subheading}>{filtered.length} doctors found • Sorted by distance</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.viewOnMapBtn}
+          onPress={() => onOpenDoctorMap?.(filtered[0]?.id, filtered[0]?.name || '')}
+          activeOpacity={0.7}
+        >
+          <MaterialIcons name="map" size={16} color={Colors.primary} />
+          <Text style={styles.viewOnMapText}>View on Map</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Specialty Filter */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
@@ -257,10 +265,11 @@ export const PatientDoctorsScreen: React.FC<Props> = ({ onOpenBooking, onOpenDoc
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.surface },
   content: { padding: Spacing.md, gap: 12, paddingBottom: 24 },
-  heading: { fontSize: 20, fontWeight: '800', color: Colors.onSurface },
-  viewOnMapBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.surfaceContainerLowest, paddingHorizontal: 12, paddingVertical: 8, borderRadius: Radii.full, borderWidth: 1, borderColor: Colors.outlineLight, alignSelf: 'flex-start', marginBottom: 4 },
-  viewOnMapText: { fontSize: 13, fontWeight: '700', color: Colors.primary },
-  subheading: { fontSize: 12, color: Colors.onSurfaceVariant, marginTop: -8 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 2 },
+  heading: { fontSize: 20, fontWeight: '800', color: Colors.onSurface, letterSpacing: -0.3 },
+  subheading: { fontSize: 12, color: Colors.onSurfaceVariant, marginTop: 2 },
+  viewOnMapBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.surfaceContainerLowest, paddingHorizontal: 12, paddingVertical: 7, borderRadius: Radii.full, borderWidth: 1, borderColor: Colors.outlineLight, ...Shadows.sm },
+  viewOnMapText: { fontSize: 12, fontWeight: '700', color: Colors.primary },
   filterRow: { gap: 8, paddingVertical: 4 },
   filterChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: Radii.full, backgroundColor: Colors.surfaceContainerLow, borderWidth: 1, borderColor: Colors.outlineLight },
   filterChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
@@ -272,9 +281,9 @@ const styles = StyleSheet.create({
   docHeader: { flexDirection: 'row', gap: 12 },
   docAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
   docName: { fontSize: 15, fontWeight: '700', color: Colors.onSurface },
-  onlineBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#DCFCE7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radii.full },
-  onlineDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#16A34A' },
-  onlineBadgeText: { fontSize: 11, fontWeight: '700', color: '#15803D' },
+  onlineBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: '#C4EFF5', paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radii.full },
+  onlineDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.primaryDark },
+  onlineBadgeText: { fontSize: 11, fontWeight: '700', color: Colors.primaryDark },
   offlineBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#F3F4F6', paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radii.full },
   offlineDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#9CA3AF' },
   offlineBadgeText: { fontSize: 11, fontWeight: '600', color: '#6B7280' },
@@ -284,8 +293,8 @@ const styles = StyleSheet.create({
   statBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.surfaceContainerLow, paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radii.full, borderWidth: 1, borderColor: Colors.outlineLight },
   statText: { fontSize: 11, fontWeight: '700', color: Colors.onSurface },
   statSub: { fontSize: 10, color: Colors.onSurfaceVariant },
-  activeApptBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.tertiaryContainer, padding: 10, borderRadius: Radii.md },
-  activeApptText: { fontSize: 12, fontWeight: '600', color: Colors.onTertiaryContainer, flex: 1 },
+  activeApptBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: '#C4EFF5', padding: 10, borderRadius: Radii.md },
+  activeApptText: { fontSize: 12, fontWeight: '600', color: Colors.primaryDark, flex: 1 },
   commRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
   chatBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: Radii.md, backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: Colors.primary },
   chatBtnText: { fontSize: 12, fontWeight: '700', color: Colors.primary },

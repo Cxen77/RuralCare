@@ -15,12 +15,12 @@ interface AvatarProps {
 }
 
 const AVATAR_PALETTES = [
-  { bg: '#EFFDFF', fg: Colors.primary, border: '#B5F1F8' },
-  { bg: '#EEF2FF', fg: '#4F46E5', border: '#C7D2FE' },
-  { bg: '#F0FDF4', fg: '#16A34A', border: '#BBF7D0' },
-  { bg: '#FFF7ED', fg: '#EA580C', border: '#FFEDD5' },
-  { bg: '#FAF5FF', fg: '#9333EA', border: '#E9D5FF' },
-  { bg: '#ECFEFF', fg: '#0891B2', border: '#A5F3FC' },
+  { bg: '#E6F4F1', fg: '#087F8C', border: '#79D4E2' },
+  { bg: '#F0FDFA', fg: '#0D9488', border: '#99F6E4' },
+  { bg: '#EFFDFF', fg: '#00646F', border: '#95F1FF' },
+  { bg: '#E0F2F1', fg: '#00796B', border: '#80CBC4' },
+  { bg: '#EAFFF2', fg: '#00674A', border: '#A7F3D0' },
+  { bg: '#ECFEFF', fg: '#0891B2', border: '#67E8F9' },
 ];
 
 const getPaletteForName = (name?: string) => {

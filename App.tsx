@@ -132,12 +132,14 @@ function AppContent() {
 
   return (
     <View style={styles.appContainer}>
-      {/* Top Header with Profile & SOS */}
-<Header
-      onProfilePress={() => setActiveTab('profile')}
-      onSosPress={() => setSosVisible(true)}
-      onViewMap={() => setActiveTab('map')}
-    />
+      {/* Top Header with Profile & SOS (hidden on AI chat page) */}
+      {activeTab !== 'triage' && (
+        <Header
+          onProfilePress={() => setActiveTab('profile')}
+          onSosPress={() => setSosVisible(true)}
+          onViewMap={() => setActiveTab('map')}
+        />
+      )}
 
       {/* Tab Screens Container */}
       <View style={styles.content}>
@@ -154,7 +156,10 @@ function AppContent() {
           />
         )}
         {activeTab === 'doctors' && (
-          <PatientDoctorsScreen onOpenBooking={handleOpenBooking} />
+          <PatientDoctorsScreen
+            onOpenBooking={handleOpenBooking}
+            onOpenDoctorMap={handleOpenDoctorMap}
+          />
         )}
         {activeTab === 'map' && (
           <PatientMapScreen

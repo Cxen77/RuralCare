@@ -361,13 +361,17 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
                         color={appt.mode === 'video' ? Colors.primary : Colors.secondary}
                       />
                       <Text style={styles.modeTimeText}>
-                        {appt.date ? `${appt.date} • ${appt.time}` : appt.time}
+                        {isDone ? 'Consulted' : isInConsult ? 'In Consult' : appt.mode === 'video' ? 'Video Visit' : 'In Clinic'}
                       </Text>
                     </View>
                   </View>
                   <Text style={styles.patientDemographics}>
                     {patient.age ? `${patient.age}y` : ''} {patient.gender ? `/ ${patient.gender}` : ''} {patient.village ? `• ${patient.village}` : ''} • ABHA: {(patient.abhaId || 'N/A').slice(0, 7)}...
                   </Text>
+                  <View style={styles.scheduleRow}>
+                    <MaterialIcons name="event" size={12} color={Colors.primary} />
+                    <Text style={styles.scheduleText}>{appt.date ? `${appt.date} • ${appt.time}` : appt.time}</Text>
+                  </View>
                 </View>
               </View>
 
@@ -443,7 +447,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
               {/* Consultation Action Trigger */}
               {!isDone ? (
                 <Button
-                  label={isWaiting ? 'Start Consultation' : 'Resume Consultation Workbench'}
+                  label={isWaiting ? 'Start Consultation' : 'Resume Consultation'}
                   icon="medical-services"
                   block
                   onPress={() => onStartConsult(appt.id)}
@@ -475,7 +479,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
                   }}
                   activeOpacity={0.7}
                 >
-                  <MaterialIcons name="delete-outline" size={15} color={Colors.error} />
+                  <MaterialIcons name="delete-outline" size={16} color={Colors.white} />
                   <Text style={styles.deleteQueueBtnText}>Delete Appointment</Text>
                 </TouchableOpacity>
               )}
@@ -493,11 +497,11 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
             <View style={styles.moreInQueueLeft}>
               <MaterialIcons name="groups" size={18} color={Colors.primary} />
               <Text style={styles.moreInQueueText}>
-                {filteredAppointments.length - 1} more patient{filteredAppointments.length - 1 > 1 ? 's' : ''} in queue
+                {filteredAppointments.length - 1} more
               </Text>
             </View>
             <View style={styles.moreInQueueRight}>
-              <Text style={styles.moreInQueueLink}>View All in Patients Tab</Text>
+              <Text style={styles.moreInQueueLink}>View all</Text>
               <MaterialIcons name="arrow-forward" size={16} color={Colors.primary} />
             </View>
           </TouchableOpacity>
@@ -891,6 +895,17 @@ const styles = StyleSheet.create({
     color: Colors.onSurfaceVariant,
     marginTop: 2,
   },
+  scheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3,
+  },
+  scheduleText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
   complaintContainer: {
     backgroundColor: Colors.surfaceContainerLow,
     padding: 10,
@@ -938,14 +953,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: Radii.sm,
+    paddingVertical: 2,
   },
   allergyAlertText: {
     fontSize: 11,
-    color: Colors.error,
+    color: '#DC2626',
     fontWeight: '600',
   },
   completedStatusRow: {
@@ -1143,15 +1155,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 8,
-    marginTop: 6,
+    height: 40,
+    marginTop: 8,
     borderRadius: Radii.md,
-    backgroundColor: 'transparent',
+    backgroundColor: '#DC2626',
   },
   deleteQueueBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.error,
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.white,
   },
   moreInQueueBtn: {
     flexDirection: 'row',

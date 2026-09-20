@@ -36,6 +36,34 @@ function broadcastPresence(doctorId, isOnline, lastSeen) {
   });
 }
 
+function cleanDoctorName(name) {
+  if (!name) return 'Doctor';
+  const stripped = name.replace(/^(Dr\.?\s*)+/i, '').trim();
+  return stripped ? `Dr. ${stripped}` : 'Doctor';
+}
+
+/**
+ * Preload active presence records from MongoDB on server startup.
+ */
+async function initPresence() {
+  try {
+    const records = await DoctorPresence.find({ isOnline: true }).lean();
+    records.forEach((r) => {
+      presenceCache.set(r.doctorId, {
+        isOnline: true,
+        lastSeen: r.lastSeen || new Date(),
+        socketId: r.socketId,
+        doctorName: cleanDoctorName(r.doctorName),
+      });
+    });
+    if (records.length > 0) {
+      console.log(`[presence] Preloaded ${records.length} online doctor(s) from database`);
+    }
+  } catch (err) {
+    console.error('[presence] Failed to preload online doctors:', err.message);
+  }
+}
+
 /**
  * Marks a doctor as ONLINE immediately. Clears any pending disconnect grace timer.
  */
@@ -46,12 +74,13 @@ async function setDoctorOnline(doctorId, doctorName = 'Doctor', socketId = null)
     disconnectTimers.delete(doctorId);
   }
 
+  const normalizedName = cleanDoctorName(doctorName);
   const now = new Date();
   const entry = {
     isOnline: true,
     lastSeen: now,
     socketId,
-    doctorName,
+    doctorName: normalizedName,
   };
   presenceCache.set(doctorId, entry);
 
@@ -63,7 +92,7 @@ async function setDoctorOnline(doctorId, doctorName = 'Doctor', socketId = null)
           isOnline: true,
           lastSeen: now,
           socketId,
-          doctorName,
+          doctorName: normalizedName,
         },
       },
       { upsert: true, returnDocument: 'after' }
@@ -73,7 +102,7 @@ async function setDoctorOnline(doctorId, doctorName = 'Doctor', socketId = null)
   }
 
   broadcastPresence(doctorId, true, now);
-  console.log(`[presence] Doctor ${doctorId} (${doctorName}) is now ONLINE`);
+  console.log(`[presence] Doctor ${doctorId} (${normalizedName}) is now ONLINE`);
 }
 
 /**
@@ -128,6 +157,42 @@ function isDoctorOnline(doctorId) {
 }
 
 /**
+ * Asynchronous check for doctor online status.
+ * Checks:
+ * 1. Active grace-period / disconnect timers
+ * 2. In-memory presence cache
+ * 3. MongoDB DoctorPresence record
+ * 4. Doctor active availability status (Doctor.isAvailable !== false)
+ */
+async function isDoctorOnlineAsync(doctorId) {
+  if (disconnectTimers.has(doctorId)) return true;
+  const entry = presenceCache.get(doctorId);
+  if (entry && entry.isOnline) return true;
+
+  try {
+    const record = await DoctorPresence.findOne({ doctorId }).lean();
+    if (record && record.isOnline) {
+      presenceCache.set(doctorId, {
+        isOnline: true,
+        lastSeen: record.lastSeen || new Date(),
+        socketId: record.socketId,
+        doctorName: cleanDoctorName(record.doctorName),
+      });
+      return true;
+    }
+
+    const doc = await Doctor.findOne({ id: doctorId }).lean();
+    if (doc && doc.isAvailable !== false) {
+      return true;
+    }
+  } catch (err) {
+    console.error('[presence] isDoctorOnlineAsync error:', err.message);
+  }
+
+  return false;
+}
+
+/**
  * Gets doctor presence info.
  */
 async function getDoctorPresence(doctorId) {
@@ -137,24 +202,25 @@ async function getDoctorPresence(doctorId) {
       doctorId,
       isOnline: isDoctorOnline(doctorId),
       lastSeen: cached.lastSeen,
-      doctorName: cached.doctorName,
+      doctorName: cleanDoctorName(cached.doctorName),
     };
   }
 
   // Fallback to database
   const record = await DoctorPresence.findOne({ doctorId }).lean();
   if (record) {
+    const normalizedName = cleanDoctorName(record.doctorName);
     presenceCache.set(doctorId, {
       isOnline: record.isOnline,
       lastSeen: record.lastSeen,
       socketId: record.socketId,
-      doctorName: record.doctorName,
+      doctorName: normalizedName,
     });
     return {
       doctorId,
       isOnline: record.isOnline,
       lastSeen: record.lastSeen,
-      doctorName: record.doctorName,
+      doctorName: normalizedName,
     };
   }
 
@@ -162,9 +228,9 @@ async function getDoctorPresence(doctorId) {
   const doc = await Doctor.findOne({ id: doctorId }).lean();
   return {
     doctorId,
-    isOnline: false,
+    isOnline: doc?.isAvailable !== false,
     lastSeen: doc?.updatedAt || new Date(0),
-    doctorName: doc?.name || 'Doctor',
+    doctorName: cleanDoctorName(doc?.name || 'Doctor'),
   };
 }
 
@@ -180,7 +246,7 @@ async function getAllPresence() {
     map[r.doctorId] = {
       isOnline,
       lastSeen: r.lastSeen,
-      doctorName: r.doctorName,
+      doctorName: cleanDoctorName(r.doctorName),
     };
   });
 
@@ -189,7 +255,7 @@ async function getAllPresence() {
     map[docId] = {
       isOnline: isDoctorOnline(docId),
       lastSeen: val.lastSeen,
-      doctorName: val.doctorName,
+      doctorName: cleanDoctorName(val.doctorName),
     };
   });
 
@@ -209,9 +275,11 @@ function touchHeartbeat(doctorId) {
 
 module.exports = {
   setWss,
+  initPresence,
   setDoctorOnline,
   setDoctorOffline,
   isDoctorOnline,
+  isDoctorOnlineAsync,
   getDoctorPresence,
   getAllPresence,
   touchHeartbeat,

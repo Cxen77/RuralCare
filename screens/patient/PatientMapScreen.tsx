@@ -31,6 +31,11 @@ import {
   buildPharmacyMarkers,
   buildHospitalMarkers,
 } from '../../services/location/mapData';
+import { io } from 'socket.io-client';
+import { API_BASE_URL } from '../../services/apiClient';
+import { ReportEmergencyModal } from '../../components/emergency/ReportEmergencyModal';
+import { EmergencyDetailSheet, EmergencyData } from '../../components/emergency/EmergencyDetailSheet';
+import { CommunityNotificationToast } from '../../components/emergency/CommunityNotificationToast';
 
 interface Props {
   focusDoctorId?: string | null;
@@ -64,6 +69,12 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
   const [gpsNotice, setGpsNotice] = useState<string | null>(null);
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);
 
+  // Live Community Emergency states
+  const [emergencies, setEmergencies] = useState<EmergencyData[]>([]);
+  const [selectedEmergency, setSelectedEmergency] = useState<EmergencyData | null>(null);
+  const [incomingAlert, setIncomingAlert] = useState<EmergencyData | null>(null);
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+
   const [driving, setDriving] = useState<{ distanceKm: number; durationMin: number } | null>(null);
   const [drivingLoading, setDrivingLoading] = useState(false);
   const [route, setRoute] = useState<MapRoute | null>(null);
@@ -74,14 +85,29 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
   const doctorMarkers = useMemo(() => buildDoctorMarkers(doctors), [doctors]);
   const pharmacyMarkers = useMemo(() => buildPharmacyMarkers(pharmacies), [pharmacies]);
   const hospitalMarkers = useMemo(() => buildHospitalMarkers(hospitals), [hospitals]);
+
+  const emergencyMarkers: MapMarker[] = useMemo(() => {
+    return emergencies.map(e => ({
+      id: `emg-${e.id || e._id}`,
+      latitude: e.latitude,
+      longitude: e.longitude,
+      title: `🚨 ${e.emergencyType.replace(/_/g, ' ').toUpperCase()}`,
+      subtitle: `${e.status.toUpperCase()} • ${e.address || ''}`,
+      type: 'emergency' as const,
+      emergencyStatus: e.status,
+      emergencyType: e.emergencyType,
+    }));
+  }, [emergencies]);
+
   const markers: MapMarker[] = useMemo(() => {
     const list: MapMarker[] = [];
     if (patientMarker) list.push(patientMarker);
     list.push(...doctorMarkers);
     list.push(...pharmacyMarkers);
     list.push(...hospitalMarkers);
+    list.push(...emergencyMarkers);
     return list;
-  }, [patientMarker, doctorMarkers, pharmacyMarkers, hospitalMarkers]);
+  }, [patientMarker, doctorMarkers, pharmacyMarkers, hospitalMarkers, emergencyMarkers]);
 
   const doctorsWithoutCoords = doctors.filter(
     d => !isValidCoordinate(d.latitude, d.longitude)
@@ -210,8 +236,70 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
     };
   }, [selectedDoctorId, patient?.latitude, patient?.longitude]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Fetch initial nearby emergencies on Care Map
+  useEffect(() => {
+    let alive = true;
+    const fetchNearby = async () => {
+      try {
+        const API_URL = API_BASE_URL || 'http://localhost:4000';
+        const lat = patient?.latitude || center.lat || 26.7606;
+        const lng = patient?.longitude || center.lng || 83.3732;
+        const res = await fetch(`${API_URL}/api/emergencies/nearby?lat=${lat}&lng=${lng}&radiusKm=50`);
+        const json = await res.json();
+        if (alive && json.success && Array.isArray(json.data)) {
+          setEmergencies(json.data);
+        }
+      } catch (err) {
+        console.warn('[CareMap] Failed to load nearby emergencies:', err);
+      }
+    };
+    fetchNearby();
+    return () => { alive = false; };
+  }, [patient?.latitude, patient?.longitude]);
+
+  // Connect to Socket.IO for real-time emergency events
+  useEffect(() => {
+    const API_URL = API_BASE_URL || 'http://localhost:4000';
+    const socket = io(API_URL, {
+      path: '/socket.io',
+      transports: ['websocket', 'polling'],
+    });
+
+    socket.on('connect', () => {
+      socket.emit('join', { role: 'patient', userId: patient?.id });
+    });
+
+    socket.on('emergency:created', (newEmg: EmergencyData) => {
+      setEmergencies(prev => [newEmg, ...prev.filter(e => (e.id || e._id) !== (newEmg.id || newEmg._id))]);
+      setIncomingAlert(newEmg);
+    });
+
+    socket.on('emergency:updated', (updatedEmg: EmergencyData) => {
+      setEmergencies(prev => prev.map(e => (e.id || e._id) === (updatedEmg.id || updatedEmg._id) ? updatedEmg : e));
+      setSelectedEmergency(prev => (prev && (prev.id || prev._id) === (updatedEmg.id || updatedEmg._id)) ? updatedEmg : prev);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [patient?.id]);
+
   const handleMarkerPress = useCallback(
     (id: string) => {
+      if (id.startsWith('emg-')) {
+        const emgId = id.replace('emg-', '');
+        const found = emergencies.find(e => (e.id || e._id) === emgId);
+        if (found) {
+          setSelectedDoctorId(null);
+          setSelectedPharmacyId(null);
+          setSelectedHospitalId(null);
+          setSelectedEmergency(found);
+          setCenter({ lat: found.latitude, lng: found.longitude });
+          setZoom(15);
+          setFocusNonce(n => n + 1);
+        }
+        return;
+      }
       if (id.startsWith('hospital-')) {
         const hospId = id.replace('hospital-', '');
         const hosp = hospitals.find(h => h.id === hospId);
@@ -330,7 +418,7 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
         <View style={{ flex: 1 }}>
           <Text style={styles.heading}>Care Map</Text>
           <Text style={styles.subheading}>
-            {doctorMarkers.length} doctors • {pharmacyMarkers.length} pharmacies mapped • OpenStreetMap
+            {doctorMarkers.length} doctors • {pharmacyMarkers.length} pharmacies mapped
           </Text>
         </View>
         <TouchableOpacity
@@ -400,6 +488,21 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
           ) : (
             <MaterialIcons name="my-location" size={22} color={Colors.primary} />
           )}
+        </TouchableOpacity>
+
+        {/* Floating LIVE Emergency Report Button */}
+        <TouchableOpacity
+          style={styles.emergencyLiveBtn}
+          onPress={() => setReportModalVisible(true)}
+          activeOpacity={0.85}
+          accessibilityLabel="Report a live road accident or medical emergency"
+        >
+          <View style={styles.emergencyLivePulse} />
+          <MaterialIcons name="emergency" size={20} color="#FFFFFF" />
+          <Text style={styles.emergencyLiveBtnText}>REPORT EMERGENCY</Text>
+          <View style={styles.liveTagPill}>
+            <Text style={styles.liveTagPillText}>LIVE</Text>
+          </View>
         </TouchableOpacity>
 
         {/* Selected doctor card */}
@@ -515,7 +618,7 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
           <View style={styles.doctorCard}>
             <View style={styles.cardHead}>
               <View style={[styles.docAvatar, { backgroundColor: '#059669' }]}>
-                <MaterialIcons name="local-pharmacy" size={20} color={Colors.white} />
+                <MaterialIcons name="medication" size={20} color={Colors.white} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.docName}>{selectedPharmacy.name}</Text>
@@ -674,6 +777,40 @@ export const PatientMapScreen: React.FC<Props> = ({ focusDoctorId, onOpenBooking
         }}
         onClose={() => setLocationPickerVisible(false)}
         onLocationConfirmed={handleLocationConfirmed}
+      />
+
+      {/* Proximity Community Emergency Alert Toast */}
+      <CommunityNotificationToast
+        emergency={incomingAlert}
+        userCoords={patient ? { latitude: patient.latitude, longitude: patient.longitude } : { latitude: center.lat, longitude: center.lng }}
+        onPress={(emg) => {
+          setSelectedEmergency(emg);
+          setCenter({ lat: emg.latitude, lng: emg.longitude });
+          setZoom(16);
+          setFocusNonce(n => n + 1);
+        }}
+        onDismiss={() => setIncomingAlert(null)}
+      />
+
+      {/* Live Incident Camera Capture & Submission Modal */}
+      <ReportEmergencyModal
+        visible={reportModalVisible}
+        onClose={() => setReportModalVisible(false)}
+        initialCoords={patient?.latitude && patient?.longitude ? { latitude: patient.latitude, longitude: patient.longitude } : { latitude: center.lat, longitude: center.lng }}
+        onReportCreated={(newReport) => {
+          setEmergencies(prev => [newReport, ...prev.filter(e => (e.id || e._id) !== (newReport.id || newReport._id))]);
+          setSelectedEmergency(newReport);
+          setCenter({ lat: newReport.latitude, lng: newReport.longitude });
+          setZoom(16);
+          setFocusNonce(n => n + 1);
+        }}
+      />
+
+      {/* Detailed Emergency Incident Bottom Sheet */}
+      <EmergencyDetailSheet
+        emergency={selectedEmergency}
+        onClose={() => setSelectedEmergency(null)}
+        userCoords={patient ? { latitude: patient.latitude, longitude: patient.longitude } : { latitude: center.lat, longitude: center.lng }}
       />
     </View>
   );
@@ -836,4 +973,49 @@ const styles = StyleSheet.create({
     ...Shadows.sm,
   },
   emptyChipText: { fontSize: 12, fontWeight: '600', color: Colors.onSurfaceVariant },
+  // Floating Live Emergency Button Styles
+  emergencyLiveBtn: {
+    position: 'absolute',
+    top: 14,
+    left: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: Radii.full,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    zIndex: 25,
+    ...Shadows.md,
+  },
+  emergencyLivePulse: {
+    position: 'absolute',
+    top: -3,
+    left: -3,
+    right: -3,
+    bottom: -3,
+    borderRadius: Radii.full,
+    borderWidth: 1.5,
+    borderColor: 'rgba(220, 38, 38, 0.5)',
+  },
+  emergencyLiveBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+  liveTagPill: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radii.full,
+  },
+  liveTagPillText: {
+    color: '#DC2626',
+    fontSize: 9.5,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
 });

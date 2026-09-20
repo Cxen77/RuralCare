@@ -6,13 +6,17 @@ import { useCarePlatform } from '../../context/CarePlatformContext';
 import { useAuth } from '../../context/AuthContext';
 import { Card, SectionHeader, Button, Avatar } from '../../components/ui';
 import { EditPatientProfileModal } from '../../components/EditPatientProfileModal';
+import { EditHealthInfoModal } from '../../components/EditHealthInfoModal';
+import { HealthPassportModal } from '../../components/HealthPassportModal';
 import { LocationPicker, ConfirmedLocation } from '../../components/maps/LocationPicker';
 
 export const PatientProfileScreen: React.FC = () => {
-  const { patient, isOnline, toggleOnline, pendingSyncCount, flushSync, updatePatientProfile } = useCarePlatform();
+  const { patient, isOnline, toggleOnline, pendingSyncCount, flushSync, updatePatientProfile, refresh } = useCarePlatform();
   const { user, logout } = useAuth();
   const [selectedLang, setSelectedLang] = useState(patient.language);
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editHealthInfoVisible, setEditHealthInfoVisible] = useState(false);
+  const [healthPassportVisible, setHealthPassportVisible] = useState(false);
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);
 
   const languages = ['Hindi', 'Bhojpuri', 'Bengali', 'English'] as const;
@@ -55,7 +59,9 @@ export const PatientProfileScreen: React.FC = () => {
         </View>
         <View style={styles.abhaIdRow}>
           <Text style={styles.abhaId}>{patient.abhaId}</Text>
-          <TouchableOpacity onPress={() => Alert.alert('QR Code', `ABHA: ${patient.abhaId}`)}><MaterialIcons name="qr-code-2" size={24} color={Colors.white} /></TouchableOpacity>
+          <TouchableOpacity onPress={() => Alert.alert('QR Code', `ABHA: ${patient.abhaId}`)}>
+            <MaterialIcons name="qr-code-2" size={24} color={Colors.white} />
+          </TouchableOpacity>
         </View>
         <View style={styles.abhaDetails}>
           <View style={styles.abhaDetailItem}>
@@ -64,7 +70,7 @@ export const PatientProfileScreen: React.FC = () => {
           </View>
           <View style={styles.abhaDetailItem}>
             <Text style={styles.abhaDetailLabel}>Blood Group</Text>
-            <Text style={styles.abhaDetailValue}>{patient.bloodGroup || 'N/A'}</Text>
+            <Text style={styles.abhaDetailValue}>{patient.bloodGroup || 'Not added'}</Text>
           </View>
           <View style={styles.abhaDetailItem}>
             <Text style={styles.abhaDetailLabel}>Village & District</Text>
@@ -81,7 +87,7 @@ export const PatientProfileScreen: React.FC = () => {
 
       {/* Edit Profile CTA Button */}
       <Button
-        label="Edit Profile & Health Details"
+        label="Edit Profile & Details"
         icon="manage-accounts"
         variant="outline"
         block
@@ -137,21 +143,129 @@ export const PatientProfileScreen: React.FC = () => {
         </View>
       </Card>
 
-      {/* Health Info */}
-      <SectionHeader title="Health Information" />
-      <Card padding={14} radius={Radii.lg}>
-        {(patient.chronicConditions || []).length > 0 && (
+      {/* Health Info & Health Passport */}
+      <SectionHeader title="Health Information & Passport" />
+      <Card padding={18} radius={Radii.xl} style={styles.passportCard}>
+        <View style={styles.passportHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+            <View style={styles.passportIconCircle}>
+              <MaterialIcons name="health-and-safety" size={22} color={Colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.passportTitle}>Digital Health Passport</Text>
+              <Text style={styles.passportSub} numberOfLines={2}>
+                Longitudinal record & clinical continuity across consultations
+              </Text>
+            </View>
+          </View>
+          <View style={styles.activeTagBadge}>
+            <MaterialIcons name="check-circle" size={12} color="#16A34A" />
+            <Text style={styles.activeTagBadgeText}>ACTIVE</Text>
+          </View>
+        </View>
+
+        {/* Health Data Preview Rows */}
+        <View style={styles.healthSummaryBox}>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Blood Group</Text>
+            <Text
+              style={[
+                styles.infoValue,
+                {
+                  fontWeight: '700',
+                  color: patient.bloodGroup ? Colors.onSurface : Colors.outline,
+                },
+              ]}
+            >
+              {patient.bloodGroup || 'Not added yet'}
+            </Text>
+          </View>
+
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Allergies</Text>
+            <Text
+              style={[
+                styles.infoValue,
+                {
+                  color: (patient.allergies || []).length > 0 ? Colors.onSurface : Colors.outline,
+                },
+              ]}
+            >
+              {(patient.allergies || []).length > 0
+                ? (patient.allergies || []).join(', ')
+                : 'No allergies added'}
+            </Text>
+          </View>
+
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Chronic Conditions</Text>
-            <Text style={styles.infoValue}>{(patient.chronicConditions || []).join(', ')}</Text>
+            <Text
+              style={[
+                styles.infoValue,
+                {
+                  color: (patient.chronicConditions || []).length > 0 ? Colors.onSurface : Colors.outline,
+                },
+              ]}
+            >
+              {(patient.chronicConditions || []).length > 0
+                ? (patient.chronicConditions || []).join(', ')
+                : 'No chronic conditions added'}
+            </Text>
           </View>
-        )}
-        {(patient.allergies || []).length > 0 && (
-          <View style={[styles.infoRow, { marginTop: 8 }]}>
-            <Text style={styles.infoLabel}>Allergies</Text>
-            <Text style={[styles.infoValue, { color: Colors.error }]}>{(patient.allergies || []).join(', ')}</Text>
+
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Current Medications</Text>
+            <Text
+              style={[
+                styles.infoValue,
+                {
+                  color: (patient.currentMedications || []).length > 0 ? Colors.onSurface : Colors.outline,
+                },
+              ]}
+            >
+              {(patient.currentMedications || []).length > 0
+                ? (patient.currentMedications || []).join(', ')
+                : 'No current medications added'}
+            </Text>
           </View>
-        )}
+
+          <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
+            <Text style={styles.infoLabel}>Emergency Contact</Text>
+            <Text
+              style={[
+                styles.infoValue,
+                {
+                  color: patient.emergencyContact?.name ? Colors.onSurface : Colors.outline,
+                },
+              ]}
+            >
+              {patient.emergencyContact?.name
+                ? `${patient.emergencyContact.name} (${patient.emergencyContact.relation || 'Contact'})`
+                : 'Not added yet'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Action Buttons - Equal Sized */}
+        <View style={styles.healthActionRow}>
+          <View style={{ flex: 1 }}>
+            <Button
+              label="View"
+              icon="visibility"
+              block
+              onPress={() => setHealthPassportVisible(true)}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Button
+              label="Edit"
+              icon="edit"
+              variant="outline"
+              block
+              onPress={() => setEditHealthInfoVisible(true)}
+            />
+          </View>
+        </View>
       </Card>
 
       {/* Connectivity & Sync */}
@@ -215,6 +329,25 @@ export const PatientProfileScreen: React.FC = () => {
         onClose={() => setEditModalVisible(false)}
       />
 
+      {/* Edit Health Info Modal */}
+      <EditHealthInfoModal
+        visible={editHealthInfoVisible}
+        onClose={() => setEditHealthInfoVisible(false)}
+        onSaved={refresh}
+      />
+
+      {/* Health Passport Modal */}
+      <HealthPassportModal
+        visible={healthPassportVisible}
+        patientId={patient.id}
+        patientData={patient}
+        onClose={() => setHealthPassportVisible(false)}
+        onEditHealthInfo={() => {
+          setHealthPassportVisible(false);
+          setEditHealthInfoVisible(true);
+        }}
+      />
+
       {/* Location Picker Modal */}
       <LocationPicker
         visible={locationPickerVisible}
@@ -253,9 +386,83 @@ const styles = StyleSheet.create({
   contactTitle: { fontSize: 14, fontWeight: '700', color: Colors.onSurface },
   contactSub: { fontSize: 11, color: Colors.onSurfaceVariant, marginTop: 1 },
   callBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  infoRow: {},
-  infoLabel: { fontSize: 10, fontWeight: '700', color: Colors.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 0.5 },
-  infoValue: { fontSize: 13, fontWeight: '600', color: Colors.onSurface, marginTop: 2 },
+  passportCard: {
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 14,
+    ...Shadows.sm,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  infoLabel: { fontSize: 12, fontWeight: '600', color: '#64748B' },
+  infoValue: { fontSize: 13, fontWeight: '600', color: '#0F172A', flex: 1, textAlign: 'right', marginLeft: 12 },
+  passportHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  passportIconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(8, 127, 140, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(8, 127, 140, 0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  passportTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
+  },
+  passportSub: {
+    fontSize: 11.5,
+    color: '#64748B',
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  activeTagBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  activeTagBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#15803D',
+    letterSpacing: 0.5,
+  },
+  healthSummaryBox: {
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  healthActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
   toggleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   toggleIcon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   toggleOnline: { backgroundColor: Colors.tertiaryContainer },

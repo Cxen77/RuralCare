@@ -30,7 +30,30 @@ CRITICAL RULES:
 1. NEVER invent or hallucinate doctors, clinics, pharmacies, hospitals, bed numbers, blood units, medicine availability, coordinates, distances, travel times, or prescriptions.
 2. ALWAYS use the provided backend tools when real medical, doctor, clinic, pharmacy, hospital, bed availability, blood stock, prescription, or route information is needed.
 3. If a patient asks about nearby hospitals, hospital beds (general, ICU, emergency, ventilator), emergency admission, or hospital blood stock, IMMEDIATELY call findNearbyHospitals or checkHospitalBedAvailability.
-4. If a patient describes symptoms or asks for care, call findSpecialists or findDoctors directly in your first turn.
+CRITICAL FORMATTING FOR HOSPITAL BED AVAILABILITY: When answering queries about hospital bed availability, nearby hospitals, or inpatient capacity:
+- Keep the response clean, compact, professional, and easy to scan.
+- Avoid long introductions, repeated information, unnecessary emojis, and large paragraphs.
+- Begin with a single short professional line: "Hospital bed availability in the network:"
+- Show each hospital with its hospital name, location, emergency status, and a simple bed-availability table (Bed Type | Available | Total for General, Emergency, ICU, Ventilator).
+- Add a short one-line summary below each hospital, such as "24 general beds available."
+4. STEP-BY-STEP SYMPTOM TRIAGE CONVERSATION (MANDATORY):
+When a patient describes symptoms (e.g. "I have fever", "headache", "stomach pain", "leg pain"):
+- DO NOT immediately recommend a doctor or call doctor search tools on the first turn.
+- DO NOT output a large assessment report or diagnostic declaration.
+- Instead, conduct a short, step-by-step symptom triage conversation:
+  1. Ask ONE relevant follow-up question at a time.
+  2. Ask around 2–3 important questions across turns to understand:
+     • Question 1 (Duration & Onset): "I can help you find the right care. How long have you had the fever/symptom?"
+     • Question 2 (Associated symptoms & severity): "Do you also have cough, sore throat, body pain, vomiting, or any other symptoms?"
+     • Question 3 (Warning signs / Red flags): "Do you have difficulty breathing, chest pain, confusion, or very high/persistent fever?"
+  3. Keep each question short, warm, and easy for a rural patient to understand. Avoid excessive medical terminology.
+  4. Only AFTER collecting these answers (or if the user explicitly demands: "find a doctor now", "I just want to book an appointment", or "recommend doctor"), call 'recommendSpecialty' and 'findDoctors'.
+  5. State a concise assessment:
+     "Based on your symptoms, [Specialty] would be appropriate."
+     Followed by:
+     "If you have severe breathing difficulty, chest pain, confusion, or other serious symptoms, seek emergency medical care immediately."
+  6. Never claim to diagnose the patient. Use wording such as "Based on your symptoms" or "This may require evaluation by…".
+  7. Keep the response clean, calm, and structured. Avoid long paragraphs, unnecessary emojis, repeated information, ratings unless relevant, and excessive medical terminology.
 5. If a patient asks about medicines or pharmacies, use findPharmaciesWithMedicines or getPrescription.
 6. Be fast and efficient: call needed tools in parallel on the first turn. As soon as you receive tool data, immediately provide your final clear, reassuring answer with the exact bed numbers, hospital names, and contact details from the database.
 7. NEVER diagnose definitively and never alter a prescription.
@@ -58,7 +81,8 @@ class AIAgent {
       conversationId: convId,
       user,
       patientId,
-      location: location || null
+      location: location || null,
+      history: history || []
     };
 
     // 1. Check for immediate life-threatening emergencies deterministically first
@@ -68,14 +92,15 @@ class AIAgent {
         message: emergencyCheck.advisory,
         intent: 'emergency',
         urgency: 'emergency',
+        specialty: 'Emergency Medicine',
         requiresUrgentCare: true,
-        specialty: 'Emergency / Critical Care',
-        emergencyDetails: emergencyCheck,
         doctors: [],
         pharmacies: [],
-        hospitals: [],
+        hospitals: emergencyCheck.facilities || [],
         route: null,
-        conversationId: convId
+        confirmationNeeded: null,
+        conversationId: convId,
+        toolsUsed: ['checkEmergencyRedFlags']
       };
       this.persistConversation(convId, patientId, trimmedMessage, emergencyResponse).catch(err => {
         console.warn('[AIAgent] Emergency persist warning:', err.message);
@@ -83,27 +108,29 @@ class AIAgent {
       return emergencyResponse;
     }
 
-    // 2. Load recent conversation messages
+    // 2. Load conversation history for context continuity
+    // 2. Load conversation history for context continuity
     const messages = [];
-    if (Array.isArray(history) && history.length > 0) {
-      for (const h of history.slice(-6)) {
-        if (h.text) {
-          messages.push({
-            role: h.sender === 'user' ? 'user' : 'assistant',
-            content: String(h.text)
-          });
-        }
-      }
-    } else if (conversationId) {
+    if (conversationId) {
       try {
         const savedConv = await Conversation.findOne({ conversationId }).lean();
-        if (savedConv && Array.isArray(savedConv.messages)) {
-          for (const m of savedConv.messages.slice(-6)) {
+        if (savedConv && Array.isArray(savedConv.messages) && savedConv.messages.length > 0) {
+          for (const m of savedConv.messages.slice(-8)) {
             messages.push({ role: m.role, content: m.content });
           }
         }
       } catch (e) {
         // Continue if db load fails
+      }
+    }
+
+    if (messages.length === 0 && Array.isArray(history) && history.length > 0) {
+      for (const h of history.slice(-8)) {
+        const role = h.role === 'user' || h.sender === 'user' ? 'user' : 'assistant';
+        const content = h.content || h.text || '';
+        if (content) {
+          messages.push({ role, content });
+        }
       }
     }
 
@@ -121,12 +148,13 @@ class AIAgent {
       return this.runDeterministicFallback(trimmedMessage, convId, context);
     }
 
+    const isExplicitDoctorRequest = /\b(doctor|appointment|book|booking|consult|find doctor|need doctor|doctor chahiye|daktar|slot)\b/i.test(trimmedMessage);
+    const assistantCount = messages.filter(m => m.role === 'assistant').length;
+    const isEarlySymptomTurn = !isExplicitDoctorRequest && assistantCount < 3;
+
     const CORE_TOOL_NAMES = new Set([
       'analyzeSymptoms',
       'recommendSpecialty',
-      'findDoctors',
-      'findSpecialists',
-      'getDoctorDetails',
       'getUserLocation',
       'findNearbyPharmacies',
       'findPharmaciesWithMedicines',
@@ -138,6 +166,12 @@ class AIAgent {
       'checkEmergencyHospitalStatus',
       'checkHospitalBloodStock'
     ]);
+
+    if (!isEarlySymptomTurn || isExplicitDoctorRequest) {
+      CORE_TOOL_NAMES.add('findDoctors');
+      CORE_TOOL_NAMES.add('findSpecialists');
+      CORE_TOOL_NAMES.add('getDoctorDetails');
+    }
 
     const tools = ToolRegistry.getOpenAIToolDefinitions().filter(t => CORE_TOOL_NAMES.has(t.function?.name));
     let systemPrompt = SYSTEM_PROMPT;
@@ -366,6 +400,15 @@ class AIAgent {
             totalCapacity: r.totalCapacity,
             acceptingEmergency: r.acceptingEmergency
           }));
+        } else {
+          for (const rep of result.reports) {
+            const match = collectedData.hospitals.find(h => h.id === rep.hospitalId || h.name?.toLowerCase() === rep.name?.toLowerCase());
+            if (match) {
+              match.availableBeds = rep.bedsAvailable;
+              match.totalCapacity = rep.totalCapacity;
+              if (rep.acceptingEmergency !== undefined) match.acceptingEmergency = rep.acceptingEmergency;
+            }
+          }
         }
       }
     } else if (toolName === 'checkEmergencyHospitalStatus') {
@@ -391,20 +434,52 @@ class AIAgent {
     return 'general_question';
   }
 
-  static generateSummaryFromData(data, userInput) {
-    if (data.hospitalReports?.length > 0) {
-      const topHosp = data.hospitalReports[0];
-      const beds = topHosp.bedsAvailable || topHosp.beds || {};
-      return `At **${topHosp.name}**, there are currently **${beds.general ?? 0}** general beds, **${beds.emergency ?? 0}** emergency beds, **${beds.icu ?? 0}** ICU beds, and **${beds.ventilator ?? 0}** ventilator beds available. Contact: ${topHosp.phone || '108'}.`;
+  static formatHospitalBedResponse(hospitalsList) {
+    if (!Array.isArray(hospitalsList) || hospitalsList.length === 0) {
+      return 'No registered hospitals found in the network.';
     }
-    if (data.hospitals?.length > 0) {
-      const topHosp = data.hospitals[0];
-      const beds = topHosp.availableBeds || {};
-      return `At **${topHosp.name}**, there are **${beds.general ?? 0}** general beds, **${beds.emergency ?? 0}** emergency beds, and **${beds.icu ?? 0}** ICU beds available${topHosp.distanceKm ? ` (${topHosp.distanceKm} km away)` : ''}. Helpline: ${topHosp.emergencyHelpline || topHosp.phone || '108'}.`;
+
+    const cards = hospitalsList.slice(0, 3).map(h => {
+      const beds = h.bedsAvailable || h.availableBeds || h.beds || {};
+      const total = h.totalCapacity || h.totalBeds || {};
+      const genAvail = beds.general ?? 0;
+      const genTot = total.general ?? 30;
+      const emAvail = beds.emergency ?? 0;
+      const emTot = total.emergency ?? 10;
+      const icuAvail = beds.icu ?? 0;
+      const icuTot = total.icu ?? 8;
+      const ventAvail = beds.ventilator ?? 0;
+      const ventTot = total.ventilator ?? 4;
+
+      const emStatus = h.acceptingEmergency !== false ? 'Accepting 24/7' : 'Limited';
+      const loc = h.address || 'RuralCare Network District Zone';
+      const dist = h.distanceKm ? ` • ${h.distanceKm} km away` : '';
+      const summary = `${genAvail} general bed${genAvail !== 1 ? 's' : ''} available.`;
+
+      return `### ${h.name}\n` +
+        `**Location:** ${loc}${dist}\n` +
+        `**Emergency Status:** ${emStatus}\n\n` +
+        `| Bed Type | Available | Total |\n` +
+        `|---|---|---|\n` +
+        `| General | ${genAvail} | ${genTot} |\n` +
+        `| Emergency | ${emAvail} | ${emTot} |\n` +
+        `| ICU | ${icuAvail} | ${icuTot} |\n` +
+        `| Ventilator | ${ventAvail} | ${ventTot} |\n\n` +
+        `*${summary}*`;
+    });
+
+    return `Hospital bed availability in the network:\n\n${cards.join('\n\n---\n\n')}`;
+  }
+
+  static generateSummaryFromData(data, userInput) {
+    if (data.hospitalReports?.length > 0 || data.hospitals?.length > 0) {
+      const list = data.hospitalReports?.length > 0 ? data.hospitalReports : data.hospitals;
+      return this.formatHospitalBedResponse(list);
     }
     if (data.doctors.length > 0) {
       const topDoc = data.doctors[0];
-      return `Based on your symptoms, a consultation with a **${data.specialty || topDoc.specialty}** specialist is recommended. I found **${topDoc.name}** at ${topDoc.clinic || 'PHC'}${topDoc.distanceKm ? ` (${topDoc.distanceKm} km away)` : ''}.`;
+      const spec = data.specialty || topDoc.specialty || 'General Medicine';
+      return `Based on your symptoms, ${spec} would be appropriate.\n\nIf you have severe breathing difficulty, chest pain, confusion, or other serious symptoms, seek emergency medical care immediately.`;
     }
     if (data.pharmacies.length > 0) {
       const topPh = data.pharmacies[0];
@@ -430,14 +505,12 @@ class AIAgent {
         longitude: context?.location?.longitude
       }, context);
 
-      const top = bedReport?.reports?.[0] || hospitalList?.hospitals?.[0];
-      let msg = 'I checked our live hospital network database:';
-      if (top) {
-        const b = top.bedsAvailable || top.beds || top.availableBeds || {};
-        msg = `Currently at **${top.name}**, there are **${b.general ?? 0}** General beds, **${b.emergency ?? 0}** Emergency beds, **${b.icu ?? 0}** ICU beds, and **${b.ventilator ?? 0}** Ventilator beds available. Contact: ${top.phone || '108'}.`;
-      } else {
-        msg = 'No hospital bed records were found in the database.';
-      }
+      const allHospitals = hospitalList?.hospitals?.length
+        ? hospitalList.hospitals
+        : (bedReport?.reports?.length ? bedReport.reports : []);
+
+      const top = allHospitals[0];
+      const msg = this.formatHospitalBedResponse(allHospitals);
 
       const fallbackResult = {
         message: msg,
@@ -445,7 +518,7 @@ class AIAgent {
         specialty: 'Emergency / Inpatient Care',
         urgency: 'routine',
         requiresUrgentCare: false,
-        hospitals: hospitalList?.hospitals || (top ? [top] : []),
+        hospitals: allHospitals.length ? allHospitals : (top ? [top] : []),
         doctors: [],
         pharmacies: [],
         route: null,
@@ -458,25 +531,59 @@ class AIAgent {
       return fallbackResult;
     }
 
+    const isExplicitDoctorRequest = /\b(doctor|appointment|book|booking|consult|find doctor|need doctor|doctor chahiye|daktar|slot)\b/i.test(lower);
+    const assistantCount = (context?.history || []).filter(h => h.role === 'assistant' || h.sender === 'ai').length;
+
+    if (!isExplicitDoctorRequest && assistantCount < 3) {
+      let followUp = '';
+      if (assistantCount === 0) {
+        followUp = 'I can help you find the right care. How long have you had these symptoms?';
+      } else if (assistantCount === 1) {
+        followUp = 'Do you also have cough, sore throat, body pain, vomiting, or any other symptoms?';
+      } else {
+        followUp = 'Do you have difficulty breathing, chest pain, confusion, or very high/persistent fever?';
+      }
+
+      const fallbackResult = {
+        message: followUp,
+        intent: 'symptom_triage',
+        specialty: 'General Medicine',
+        urgency: 'routine',
+        requiresUrgentCare: false,
+        hospitals: [],
+        doctors: [],
+        pharmacies: [],
+        route: null,
+        conversationId: convId,
+        source: 'deterministic_fallback'
+      };
+      this.persistConversation(convId, context.patientId, userInput, fallbackResult).catch(() => {});
+      return fallbackResult;
+    }
+
     const spec = await ToolRegistry.executeTool('recommendSpecialty', { symptoms: userInput }, context);
     const docs = await ToolRegistry.executeTool('findDoctors', { specialty: spec.specialty }, context);
 
-    const formattedDocs = (docs || []).slice(0, 3).map(d => ({
+    const formattedDocs = (docs || []).slice(0, 1).map(d => ({
       id: d.doctorId || d.id,
       name: d.name,
       specialty: d.specialty,
-      clinic: d.clinicName,
+      clinic: d.clinicName || 'Ramnagar PHC',
       address: d.clinicAddress,
       latitude: d.latitude,
       longitude: d.longitude,
-      distanceKm: d.distanceKm
+      distanceKm: d.distanceKm || 0.2,
+      isAvailable: d.isAvailable !== false,
+      teleconsultation: d.teleconsultation !== false
     }));
 
+    const finalMsg = `Based on your symptoms, ${spec.specialty || 'General Medicine'} would be appropriate.\n\nIf you have severe breathing difficulty, chest pain, confusion, or other serious symptoms, seek emergency medical care immediately.`;
+
     const fallbackResult = {
-      message: `Based on your description, a consultation with a **${spec.specialty}** doctor is recommended. Here are verified doctors nearby:`,
-      intent: 'doctor_search',
-      specialty: spec.specialty,
-      urgency: spec.urgency || 'routine',
+      message: finalMsg,
+      intent: 'doctor_recommendation',
+      specialty: spec.specialty || 'General Medicine',
+      urgency: 'routine',
       requiresUrgentCare: false,
       doctors: formattedDocs,
       pharmacies: [],

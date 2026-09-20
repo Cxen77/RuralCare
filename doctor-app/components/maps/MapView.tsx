@@ -237,6 +237,21 @@ export const MapView: React.FC<MapViewProps> = ({
       font-size: 12px;
       color: #1A1A1A;
     }
+
+    .maplibregl-ctrl-attrib,
+    .maplibregl-ctrl-attrib-inner,
+    .maplibregl-compact,
+    .maplibregl-compact-show,
+    .maplibregl-ctrl-logo,
+    .maplibregl-ctrl-bottom-left,
+    .maplibregl-ctrl-bottom-right,
+    .mapboxgl-ctrl-attrib,
+    .mapboxgl-ctrl-logo {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
   </style>
 </head>
 <body>
@@ -267,8 +282,6 @@ export const MapView: React.FC<MapViewProps> = ({
         interactive: isInteractive,
         attributionControl: false
       });
-
-      map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
 
       map.on('load', function() {
         try {
@@ -458,7 +471,7 @@ export const MapView: React.FC<MapViewProps> = ({
       <View style={styles.osmHeader}>
         <View style={styles.osmBadge}>
           <MaterialIcons name="map" size={14} color={Colors.primary} />
-          <Text style={styles.osmBadgeText}>Geoapify • MapLibre</Text>
+          <Text style={styles.osmBadgeText}>Location</Text>
         </View>
         <Text style={styles.osmCoordsText}>
           {safeLat.toFixed(4)}°N, {safeLng.toFixed(4)}°E

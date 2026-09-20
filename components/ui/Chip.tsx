@@ -61,6 +61,8 @@ export const Chip: React.FC<ChipProps> = ({
         />
       )}
       <Text
+        numberOfLines={1}
+        ellipsizeMode="tail"
         style={[
           font,
           { color: selected ? t.fg : Colors.onSurfaceVariant },

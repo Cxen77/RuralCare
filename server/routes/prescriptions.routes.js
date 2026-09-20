@@ -133,4 +133,17 @@ router.patch(
   })
 );
 
+router.delete(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const rx = await Prescription.findOne({ id: req.params.id });
+    if (!rx) throw new ApiError(404, 'NOT_FOUND', 'Prescription not found.');
+
+    await Prescription.deleteOne({ id: req.params.id });
+    await PharmacyRequest.deleteMany({ prescriptionId: req.params.id });
+
+    return ok(res, { deleted: true, id: req.params.id });
+  })
+);
+
 module.exports = router;

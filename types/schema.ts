@@ -23,9 +23,18 @@ export interface Patient {
   ashaWorker: { name: string; phone: string };
   language: 'Hindi' | 'Bhojpuri' | 'Bengali' | 'English';
   ayushmanEligible: boolean;
+  dateOfBirth?: string;
   bloodGroup?: string;
   allergies: string[];
   chronicConditions: string[];
+  currentMedications?: string[];
+  previousConditions?: string[];
+  emergencyContact?: {
+    name?: string;
+    phone?: string;
+    relation?: string;
+  };
+  importantNotes?: string;
 }
 
 // ─── Doctor ─────────────────────────────────────────────────────────────────
